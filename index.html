@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="pl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mój Koszyk</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header class="naglowek">
+      <h1>Mój Koszyk</h1>
+      <p class="podtytul">Wybierz produkty i sprawdź, ile masz do zapłaty.</p>
+    </header>
+
+    <main class="uklad">
+      <section class="karta" id="sklep">
+        <h2>Produkty</h2>
+        <div id="lista-produktow" class="produkty"></div>
+      </section>
+
+      <section class="karta" id="koszyk">
+        <h2>Twój koszyk</h2>
+        <ul id="lista-koszyka" class="koszyk-lista"></ul>
+        <div class="podsumowanie">
+          <span>Razem</span>
+          <span class="kwota"><span id="suma">0</span> zł</span>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="main.js"></script>
+  </body>
+</html>

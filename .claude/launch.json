@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "asystent-budowy",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["asystent-budowy/server.cjs"],
+      "port": 4599
+    }
+  ]
+}

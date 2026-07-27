@@ -1,0 +1,7 @@
+[
+  { "nazwa": "Kawa", "cena": 12 },
+  { "nazwa": "Herbata", "cena": 9 },
+  { "nazwa": "Sok pomarańczowy", "cena": 11 },
+  { "nazwa": "Woda", "cena": 6 },
+  { "nazwa": "Ciastko", "cena": 8 }
+]

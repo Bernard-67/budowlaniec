@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Asystent Budowy Domu — prototyp</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+  <!-- ======================= EKRAN STARTOWY ======================= -->
+  <section id="screen-start" class="screen screen-start">
+    <div class="start-inner">
+      <div class="brand-mark">
+        <span class="brand-logo">🏠</span>
+        <span class="brand-name">Asystent Budowy Domu</span>
+      </div>
+      <h1 class="start-title">Od pomysłu do gotowego planu budowy</h1>
+      <p class="start-lead">
+        Przeprowadzę Cię przez planowanie budowy domu — od wizji, przez zgodność z planem
+        miejscowym, po kosztorys i oferty wykonawców. Powiedz mi, na jakim etapie jesteś,
+        a dopasuję zakres do Twojej sytuacji.
+      </p>
+
+      <div id="stage-cards" class="stage-cards"><!-- karty etapów renderuje app.js --></div>
+
+      <p class="start-foot">Prototyp klikalny · dane przykładowe · bez połączenia z modelami AI</p>
+    </div>
+  </section>
+
+  <!-- ======================= DASHBOARD ======================= -->
+  <section id="screen-dashboard" class="screen screen-dashboard hidden">
+
+    <!-- Górny pasek -->
+    <header class="topbar">
+      <div class="topbar-left">
+        <span class="brand-logo small">🏠</span>
+        <span class="brand-name small">Asystent Budowy Domu</span>
+        <span id="stage-badge" class="stage-badge">—</span>
+      </div>
+      <div class="topbar-right">
+        <button id="btn-history" class="icon-btn" title="Historia wersji">🕑 Historia</button>
+        <button id="btn-restart" class="icon-btn" title="Zacznij od nowa">↻ Zacznij od nowa</button>
+        <span class="user-chip" title="bernard.lipiec76@gmail.com">BL</span>
+      </div>
+    </header>
+
+    <!-- Pasek postępu -->
+    <nav id="progress-bar" class="progress-bar"><!-- węzły renderuje app.js --></nav>
+
+    <!-- Główny układ: czat + panele boczne -->
+    <div class="dashboard-body">
+
+      <main class="chat-col">
+        <div id="chat-window" class="chat-window"><!-- bąbelki i widgety --></div>
+
+        <!-- Rząd wpisywania wiadomości (hybryda: aktywny tylko w krokach 'choice') -->
+        <form id="chat-input-row" class="chat-input-row" autocomplete="off">
+          <input id="chat-input" class="chat-input" type="text"
+                 placeholder="Wpisz własną odpowiedź…" disabled />
+          <button id="chat-send" class="chat-send" type="submit" disabled>Wyślij</button>
+        </form>
+      </main>
+
+      <aside class="side-col">
+        <!-- Checklista -->
+        <div class="card">
+          <div class="card-head"><span class="card-ico">✅</span> Checklista kompletności</div>
+          <ul id="checklist" class="checklist"><!-- pozycje --></ul>
+        </div>
+
+        <!-- MPZP -->
+        <div id="card-mpzp" class="card card-locked">
+          <div class="card-head"><span class="card-ico">📋</span> Zgodność z MPZP</div>
+          <div class="card-body" id="card-mpzp-body">
+            <p class="card-placeholder">Odblokuje się po analizie planu miejscowego.</p>
+          </div>
+        </div>
+
+        <!-- Kosztorys -->
+        <div id="card-kosztorys" class="card card-locked">
+          <div class="card-head"><span class="card-ico">💰</span> Kosztorys i materiały</div>
+          <div class="card-body" id="card-kosztorys-body">
+            <p class="card-placeholder">Odblokuje się po wygenerowaniu kosztorysu.</p>
+          </div>
+        </div>
+
+        <!-- Oferty -->
+        <div id="card-oferty" class="card card-locked">
+          <div class="card-head"><span class="card-ico">📊</span> Oferty i kolejność prac</div>
+          <div class="card-body" id="card-oferty-body">
+            <p class="card-placeholder">Odblokuje się po porównaniu ofert.</p>
+          </div>
+        </div>
+      </aside>
+
+    </div>
+  </section>
+
+  <!-- ======================= MODAL: HISTORIA ======================= -->
+  <div id="modal-history" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-head">
+        <span>🕑 Historia wersji kosztorysu</span>
+        <button class="modal-close" data-close="modal-history">✕</button>
+      </div>
+      <div id="history-list" class="history-list">
+        <p class="card-placeholder">Historia pojawi się po wygenerowaniu i edycji kosztorysu.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================= MODAL: POTWIERDZENIE RESTARTU ======================= -->
+  <div id="modal-restart" class="modal-overlay hidden">
+    <div class="modal modal-sm">
+      <div class="modal-head">
+        <span>↻ Zacząć od nowa?</span>
+        <button class="modal-close" data-close="modal-restart">✕</button>
+      </div>
+      <div class="modal-body">
+        <p>Czy chcesz rozpocząć nową sesję i usunąć dotychczas zebrane informacje?
+           Tej operacji nie można cofnąć.</p>
+      </div>
+      <div class="modal-actions">
+        <button id="btn-restart-cancel" class="btn btn-ghost" data-close="modal-restart">Anuluj</button>
+        <button id="btn-restart-confirm" class="btn btn-danger">Tak, zacznij od nowa</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/data.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

@@ -93,20 +93,19 @@ const STAGES = {
         effects: { checklist: ['kosztorys'], progress: 'pomysl' },
       },
       {
-        type: 'choice',
-        key: 'budzet',
-        question: 'Jaki budżet całkowity bierzesz pod uwagę? (dom + działka)',
-        allowFree: true,
-        options: [
-          { label: 'do 600 tys. zł', value: '600', reply: 'Rozumiem — budżet do 600 tys. zł. Będziemy pilnować, żeby zakres się w nim mieścił.' },
-          { label: '600–900 tys. zł', value: '900', reply: 'Budżet 600–900 tys. zł daje sporą swobodę w wyborze technologii.' },
-          { label: 'powyżej 900 tys. zł', value: '900+', reply: 'Powyżej 900 tys. zł — możemy myśleć o wyższym standardzie wykończenia.' },
-        ],
+        type: 'dzialka_params',
+        intro: 'Skoro Twój budżet obejmuje też działkę, oszacujmy jej zakup. Podaj przybliżoną **powierzchnię działki** i **cenę za m²** w interesującej Cię okolicy — policzę łączną inwestycję (budowa + działka). Jeśli jeszcze nie wiesz, możesz pominąć.',
+        effects: { progress: 'pomysl' },
+      },
+      {
+        type: 'budzet_input',
+        question: 'Jaki masz planowany budżet całkowity na inwestycję (dom + działka)? Wpisz kwotę w złotych.',
+        obejmuje: 'dom + działka',
         effects: { checklist: ['budzet'], progress: 'pomysl' },
       },
       {
         type: 'budzet_ocena',
-        intro: 'Zestawmy teraz policzony koszt budowy z Twoim budżetem.',
+        intro: 'Zestawmy teraz szacowane koszty z Twoim budżetem.',
         effects: { progress: 'pomysl' },
       },
       {
@@ -370,17 +369,23 @@ function parseBudgetFreeText(txt) {
   return Math.round(n) || null;
 }
 
-/* Zwraca werdykt: status ok | over | open | unknown + liczby do komentarza i wskaźnika */
-function assessBudget(cost, budgetValue) {
+/* Zwraca werdykt: status ok | over | open | unknown + liczby do komentarza i wskaźnika.
+   budgetValue: dokładna kwota (liczba), klucz z BUDGET_BOUNDS albo tekst swobodny.
+   obejmujeOverride: co budżet ma pokryć (np. „dom + działka”) — nadpisuje wartość z progu. */
+function assessBudget(cost, budgetValue, obejmujeOverride) {
   let b = BUDGET_BOUNDS[budgetValue];
   if (!b) {
-    const parsed = parseBudgetFreeText(budgetValue);
+    // dokładna kwota (liczba) albo tekst swobodny („700 tys”, „1,2 mln”)
+    const parsed = (typeof budgetValue === 'number' && isFinite(budgetValue))
+      ? budgetValue
+      : parseBudgetFreeText(budgetValue);
     if (parsed == null) return { status: 'unknown', cost };
-    b = { min: 0, max: parsed, label: `ok. ${formatPln(parsed)}`, obejmuje: null };
+    b = { min: 0, max: parsed, label: formatPln(parsed), obejmuje: null, exact: true };
   }
   const out = {
     status: '', cost,
-    budgetLabel: b.label, budgetMin: b.min, budgetMax: b.max, obejmuje: b.obejmuje,
+    budgetLabel: b.label, budgetMin: b.min, budgetMax: b.max,
+    obejmuje: obejmujeOverride || b.obejmuje, exact: !!b.exact,
   };
   if (b.max == null) {
     out.status = 'open';
@@ -450,10 +455,17 @@ function generateBrief(state) {
   };
 
   const typDomu = typDomuMap[a.typ_domu] || (a.typ_domu ? `„${a.typ_domu}”` : 'dom jednorodzinny');
-  const budzet  = budzetMap[a.budzet] || (a.budzet ? `„${a.budzet}”` : 'do ustalenia');
+  let budzet;
+  if (typeof a.budzet === 'number') {
+    budzet = `${formatPln(a.budzet)}${state.budzetObejmuje ? ` (${state.budzetObejmuje})` : ''}`;
+  } else {
+    budzet = budzetMap[a.budzet] || (a.budzet ? `„${a.budzet}”` : 'do ustalenia');
+  }
 
-  // Zbierzmy dosłowne wypowiedzi użytkownika (kontrast: 2 zdania -> pełny brief)
-  const cytaty = Object.values(a).filter(Boolean);
+  // Zbierzmy dosłowne wypowiedzi użytkownika (kontrast: 2 zdania -> pełny brief).
+  // Pomijamy wartości strukturalne/liczbowe (metraż, standard, budżet) — nie są cytatami.
+  const QUOTE_SKIP = ['powUzytkowa', 'powGarazu', 'standard', 'budzet'];
+  const cytaty = Object.entries(a).filter(([k, v]) => v && !QUOTE_SKIP.includes(k)).map(([, v]) => v);
   const cytatBlok = cytaty.length
     ? cytaty.map(c => `„${c}”`).join(' · ')
     : 'brak dodatkowych wypowiedzi';
@@ -492,13 +504,16 @@ function generateBrief(state) {
 
   if (state.checklist.kosztorys) {
     const ks = state.kosztStandard;
-    sekcje.push({
-      id: 'kosztorys',
-      title: '5. Kosztorys i materiały',
-      text: ks
-        ? `Orientacyjny koszt budowy (standard ${ks.label.toLowerCase()}): ${formatPln(ks.total)}. Wyliczony z powierzchni użytkowej ${formatNum(ks.powUzytkowa)} m²${ks.powGarazu > 0 ? ` i garażu ${formatNum(ks.powGarazu)} m²` : ''} na uśrednionych stawkach za m² (dane syntetyczne). Do uściślenia po powstaniu projektu i zebraniu ofert.`
-        : `Szacunkowy koszt realizacji: ${formatPln(state.kosztorysSuma || 715000)}. Największe pozycje: stan surowy otwarty i wykończenie wnętrz. Kwoty uśrednione (dane syntetyczne), do korekty w miarę zbierania ofert.`,
-    });
+    let kosztText;
+    if (ks) {
+      const dz = state.dzialka;
+      kosztText = `Orientacyjny koszt budowy (standard ${ks.label.toLowerCase()}): ${formatPln(ks.total)}. Wyliczony z powierzchni użytkowej ${formatNum(ks.powUzytkowa)} m²${ks.powGarazu > 0 ? ` i garażu ${formatNum(ks.powGarazu)} m²` : ''} na uśrednionych stawkach za m² (dane syntetyczne).`;
+      if (dz) kosztText += ` Szacowany zakup działki (${formatNum(dz.area)} m² × ${formatNum(dz.pricePerM2)} zł/m²): ${formatPln(dz.cost)}. Łączna inwestycja (dom + działka): ${formatPln(ks.total + dz.cost)}.`;
+      kosztText += ' Do uściślenia po powstaniu projektu i zebraniu ofert.';
+    } else {
+      kosztText = `Szacunkowy koszt realizacji: ${formatPln(state.kosztorysSuma || 715000)}. Największe pozycje: stan surowy otwarty i wykończenie wnętrz. Kwoty uśrednione (dane syntetyczne), do korekty w miarę zbierania ofert.`;
+    }
+    sekcje.push({ id: 'kosztorys', title: '5. Kosztorys i materiały', text: kosztText });
   }
 
   if (state.checklist.oferty) {

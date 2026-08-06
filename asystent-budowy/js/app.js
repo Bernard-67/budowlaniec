@@ -21,6 +21,7 @@ function freshState() {
     kosztorys: null,
     kosztorysSuma: 0,
     kosztorysEdited: false,
+    kosztStandard: null,   // wybrany standard + koszt (etap „tylko pomysł”)
   };
 }
 
@@ -79,13 +80,16 @@ function runStep() {
   const step = steps[state.stepIndex];
 
   switch (step.type) {
-    case 'text':      return renderText(step);
-    case 'choice':    return renderChoice(step);
-    case 'mpzp':      return renderMpzpWidget(step);
-    case 'upload':    return renderUploadWidget(step);
-    case 'kosztorys': return renderKosztorysWidget(step);
-    case 'oferty':    return renderOffersWidget(step);
-    case 'brief':     return renderBrief(step);
+    case 'text':           return renderText(step);
+    case 'choice':         return renderChoice(step);
+    case 'dom_params':     return renderDomParams(step);
+    case 'koszt_standard': return renderKosztStandard(step);
+    case 'budzet_ocena':   return renderBudzetOcena(step);
+    case 'mpzp':           return renderMpzpWidget(step);
+    case 'upload':         return renderUploadWidget(step);
+    case 'kosztorys':      return renderKosztorysWidget(step);
+    case 'oferty':         return renderOffersWidget(step);
+    case 'brief':          return renderBrief(step);
   }
 }
 
@@ -230,6 +234,183 @@ function disableChatInput() {
   send.disabled = true;
   input.value = '';
   if (row._submitHandler) { row.removeEventListener('submit', row._submitHandler); row._submitHandler = null; }
+}
+
+/* ---------------- Krok: Parametry domu (metraż + garaż) ---------------- */
+function renderDomParams(step) {
+  assistantSay(md(step.intro), () => {
+    const block = addActionBlock();
+    block.innerHTML = `
+      <div class="widget-label">📐 Powierzchnia domu</div>
+      <div class="param-grid">
+        <div class="param-field">
+          <label for="pu-input">Powierzchnia użytkowa <span class="pf-hint">(wymagane)</span></label>
+          <div class="param-input-wrap">
+            <input class="param-input" id="pu-input" type="text" inputmode="numeric" placeholder="np. 120">
+            <span class="pi-unit">m²</span>
+          </div>
+        </div>
+        <div class="param-field">
+          <label for="pg-input">Powierzchnia garażu <span class="pf-hint">(0 = bez garażu)</span></label>
+          <div class="param-input-wrap">
+            <input class="param-input" id="pg-input" type="text" inputmode="numeric" placeholder="np. 18">
+            <span class="pi-unit">m²</span>
+          </div>
+        </div>
+      </div>
+      <div class="param-error" id="param-error" style="display:none"></div>
+      <div class="widget-actions">
+        <button class="btn btn-primary" id="params-next">Policz koszt →</button>
+      </div>`;
+    scrollChat();
+
+    const puInput = $('#pu-input');
+    puInput.focus();
+
+    $('#params-next').addEventListener('click', () => {
+      const pu = parseNum(puInput.value);
+      const pg = parseNum($('#pg-input').value);
+      if (!pu || pu < 20) {
+        const err = $('#param-error');
+        err.textContent = 'Podaj powierzchnię użytkową (min. 20 m²).';
+        err.style.display = 'block';
+        puInput.focus();
+        return;
+      }
+      state.answers.powUzytkowa = pu;
+      state.answers.powGarazu = pg;
+      block.remove();
+      const garazTxt = pg > 0 ? `, garaż ${formatNum(pg)} m²` : ', bez garażu';
+      addBubble('user', `Powierzchnia użytkowa: ${formatNum(pu)} m²${garazTxt}.`);
+      advance(step);
+    });
+  });
+}
+
+/* ---------------- Krok: Kalkulator kosztu wg standardu ---------------- */
+function renderKosztStandard(step) {
+  assistantSay(md(step.intro), () => {
+    const pu = state.answers.powUzytkowa || 0;
+    const pg = state.answers.powGarazu || 0;
+    const options = computeCostByStandard(pu, pg);
+
+    const block = addActionBlock();
+    const cardsHtml = options.map(o => `
+      <div class="std-card ${o.featured ? 'featured' : ''}">
+        <div class="std-name">${o.label}</div>
+        <div class="std-total">${formatPln(o.total)}</div>
+        <div class="std-break">Dom: ${formatNum(pu)} m² × ${formatNum(o.rateDom)} zł/m²${pg > 0 ? `<br>Garaż: ${formatNum(pg)} m² × ${formatNum(o.rateGaraz)} zł/m²` : ''}</div>
+        <div class="std-desc">${o.opis}</div>
+        <button class="btn btn-secondary std-pick" data-key="${o.key}">Wybieram ten →</button>
+      </div>`).join('');
+
+    block.innerHTML = `
+      <div class="widget-label">💰 Orientacyjny koszt budowy wg standardu</div>
+      <div class="std-cards">${cardsHtml}</div>
+      <div class="std-note">Stawki uśrednione (koszt budowy „pod klucz”, dane orientacyjne). Szczegóły trafią do karty „Kosztorys i materiały” po prawej.</div>`;
+    scrollChat();
+
+    $$('.std-pick', block).forEach(btn => {
+      btn.addEventListener('click', () => {
+        const pick = options.find(o => o.key === btn.dataset.key);
+        state.answers.standard = pick.key;
+        state.kosztStandard = { ...pick, powUzytkowa: pu, powGarazu: pg };
+        block.remove();
+        addBubble('user', `Wybieram standard: ${pick.label.toLowerCase()} — ok. ${formatPln(pick.total)}.`);
+        fillKosztStandardCard(state.kosztStandard);
+        assistantSay(`Zapisane. Orientacyjny koszt budowy w standardzie <strong>${pick.label.toLowerCase()}</strong> to <strong>${formatPln(pick.total)}</strong>. Zestawimy go za chwilę z Twoim budżetem. Pamiętaj — to szacunek na uśrednionych stawkach; uściślimy go, gdy pojawi się projekt i realne oferty.`, () => advance(step));
+      });
+    });
+  });
+}
+
+function fillKosztStandardCard(data) {
+  unlockCard('card-kosztorys');
+  const body = $('#card-kosztorys-body');
+  const rows = [
+    `<tr><td class="st-param">Powierzchnia użytkowa<br><span style="color:var(--ink-faint);font-size:11px">${formatNum(data.powUzytkowa)} m² × ${formatNum(data.rateDom)} zł/m²</span></td><td class="st-val">${formatNum(data.kosztDom)} zł</td></tr>`,
+  ];
+  if (data.powGarazu > 0) {
+    rows.push(`<tr><td class="st-param">Garaż<br><span style="color:var(--ink-faint);font-size:11px">${formatNum(data.powGarazu)} m² × ${formatNum(data.rateGaraz)} zł/m²</span></td><td class="st-val">${formatNum(data.kosztGaraz)} zł</td></tr>`);
+  }
+  body.innerHTML = `
+    <p class="mpzp-summary">Standard: <strong>${data.label}</strong> · szacunek na uśrednionych stawkach.</p>
+    <table class="side-table">${rows.join('')}</table>
+    <div class="kosztorys-suma"><span class="ks-label">Razem (szacunkowo)</span><span class="ks-val">${formatPln(data.total)}</span></div>`;
+}
+
+/* ---------------- Krok: Ocena budżetu (koszt vs budżet) ---------------- */
+function renderBudzetOcena(step) {
+  const cost = state.kosztStandard ? state.kosztStandard.total : null;
+  // Bezpiecznik: bez policzonego kosztu nie ma czego zestawiać
+  if (cost == null) { advance(step); return; }
+
+  const verdict = assessBudget(cost, state.answers.budzet);
+  const stdLabel = (state.kosztStandard.label || '').toLowerCase();
+
+  // Podpowiedź alternatywnego standardu, jeśli wybrany nie mieści się w budżecie
+  let suggestionHtml = '';
+  if (verdict.status === 'over' && verdict.budgetMax != null) {
+    const opts = computeCostByStandard(state.kosztStandard.powUzytkowa, state.kosztStandard.powGarazu);
+    const fit = opts.filter(o => o.total <= verdict.budgetMax);
+    suggestionHtml = fit.length
+      ? `<div class="verdict-hint">💡 W tym budżecie zmieściłby się standard <strong>${fit[fit.length - 1].label.toLowerCase()}</strong> (${formatPln(fit[fit.length - 1].total)}).</div>`
+      : `<div class="verdict-hint">💡 Nawet najniższy standard nie mieści się w tym budżecie — rozważ mniejszy metraż lub wyższy budżet.</div>`;
+  }
+
+  // Treść werdyktu zależnie od statusu
+  let statusClass, headline, detail;
+  if (verdict.status === 'over') {
+    statusClass = 'over';
+    headline = `Koszt budowy przekracza budżet o ${formatPln(verdict.overBy)}`;
+    detail = verdict.obejmuje === 'dom + działka'
+      ? `Sama budowa (${formatPln(cost)}) jest droższa niż górna granica budżetu (${formatPln(verdict.budgetMax)}) — a z budżetu trzeba jeszcze kupić działkę.`
+      : `Koszt budowy (${formatPln(cost)}) przekracza budżet (${formatPln(verdict.budgetMax)}).`;
+  } else if (verdict.status === 'ok') {
+    statusClass = 'ok';
+    headline = verdict.obejmuje === 'dom + działka'
+      ? `Budowa mieści się w budżecie — zostaje ok. ${formatPln(verdict.margin)} na działkę`
+      : `Koszt mieści się w budżecie (zapas ok. ${formatPln(verdict.margin)})`;
+    detail = verdict.obejmuje === 'dom + działka'
+      ? `Sama budowa mieści się w budżecie. Po odjęciu jej kosztu zostaje ok. ${formatPln(verdict.margin)} — to Twój zapas na działkę i rezerwę.`
+      : `Koszt budowy mieści się w budżecie z zapasem ok. ${formatPln(verdict.margin)}.`;
+  } else if (verdict.status === 'open') {
+    statusClass = 'neutral';
+    headline = 'Budżet bez określonego limitu';
+    detail = `Koszt budowy w standardzie ${stdLabel} to ${formatPln(cost)}. Budżet podałeś jako „${verdict.budgetLabel}”, bez górnej granicy — nie wyliczę dokładnego zapasu. Pamiętaj, że ma on pokryć także działkę.`;
+  } else { // unknown
+    statusClass = 'neutral';
+    headline = 'Budżet podany opisowo';
+    detail = `Koszt budowy w standardzie ${stdLabel} to ${formatPln(cost)}. Budżet podałeś swobodnie („${state.answers.budzet}”), więc nie zestawiam go liczbowo — dopisz konkretną kwotę, a policzę zapas.`;
+  }
+
+  // Wskaźnik (tylko dla budżetów z górną granicą)
+  const gaugeHtml = (verdict.budgetMax != null) ? `
+    <div class="budget-gauge">
+      <div class="bg-track"><div class="bg-fill ${statusClass}" style="width:${Math.min(verdict.pct, 1) * 100}%"></div></div>
+      <div class="bg-scale"><span>0</span><span>Budżet: ${formatPln(verdict.budgetMax)}</span></div>
+    </div>` : '';
+
+  assistantSay(md(step.intro), () => {
+    const block = addActionBlock();
+    block.innerHTML = `
+      <div class="widget-label">🎯 Koszt budowy a budżet</div>
+      <div class="verdict-card verdict-${statusClass}">
+        <div class="verdict-head">${headline}</div>
+        <div class="verdict-rows">
+          <div><span>Koszt budowy (${stdLabel})</span><strong>${formatPln(cost)}</strong></div>
+          <div><span>Budżet (${verdict.budgetLabel}${verdict.obejmuje ? ', ' + verdict.obejmuje : ''})</span><strong>${verdict.budgetMax != null ? '≤ ' + formatPln(verdict.budgetMax) : verdict.budgetLabel}</strong></div>
+        </div>
+        ${gaugeHtml}
+        <div class="verdict-detail">${detail}</div>
+        ${suggestionHtml}
+      </div>
+      <div class="widget-actions">
+        <button class="btn btn-primary" id="verdict-next">Dalej →</button>
+      </div>`;
+    scrollChat();
+    $('#verdict-next').addEventListener('click', () => { block.remove(); advance(step); });
+  });
 }
 
 /* ---------------- Krok: MPZP ---------------- */

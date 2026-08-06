@@ -407,6 +407,60 @@ html, body {
 .chat-table .kwota-input:focus { outline: none; border-color: var(--brick-600); }
 .chat-table tfoot td { font-weight: 700; color: var(--green-900); border-bottom: none; padding-top: 12px; }
 
+/* Parametry domu (metraż + garaż) */
+.param-grid { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 4px; }
+.param-field { flex: 1 1 170px; display: flex; flex-direction: column; gap: 5px; }
+.param-field label { font-size: 12.5px; font-weight: 600; color: var(--green-900); }
+.param-field .pf-hint { font-weight: 400; color: var(--ink-faint); }
+.param-input-wrap { position: relative; display: flex; align-items: center; }
+.param-input {
+  width: 100%; border: 1px solid var(--line-strong); border-radius: var(--radius-sm);
+  padding: 10px 40px 10px 12px; font-family: inherit; font-size: 15px;
+  font-variant-numeric: tabular-nums; color: var(--ink); background: var(--surface-2);
+}
+.param-input:focus { outline: none; border-color: var(--green-600); background: #fff; }
+.param-input-wrap .pi-unit { position: absolute; right: 12px; color: var(--ink-faint); font-size: 13px; pointer-events: none; }
+.param-error { margin-top: 8px; font-size: 12.5px; color: var(--bad); font-weight: 600; }
+
+/* Kalkulator kosztu wg standardu */
+.std-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 6px; }
+.std-card {
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+  background: var(--surface-2); padding: 14px 12px;
+  display: flex; flex-direction: column; gap: 8px;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.std-card.featured { border-color: var(--green-300); box-shadow: var(--shadow); }
+.std-card .std-name { font-size: 13.5px; font-weight: 700; color: var(--green-900); }
+.std-card .std-total { font-size: 20px; font-weight: 750; color: var(--brick-700); font-variant-numeric: tabular-nums; }
+.std-card .std-break { font-size: 11.5px; color: var(--ink-soft); line-height: 1.5; }
+.std-card .std-desc { font-size: 11.5px; color: var(--ink-faint); flex: 1; }
+.std-card .std-pick { margin-top: 4px; align-self: stretch; text-align: center; }
+.std-note { margin-top: 10px; font-size: 11.5px; color: var(--ink-faint); }
+
+@media (max-width: 720px) { .std-cards { grid-template-columns: 1fr; } }
+
+/* Ocena budżetu (koszt vs budżet) */
+.verdict-card { border-radius: var(--radius-sm); padding: 14px; border: 1px solid var(--line); margin-top: 4px; }
+.verdict-card.verdict-ok { background: var(--ok-bg); border-color: #bfe0c9; }
+.verdict-card.verdict-over { background: var(--bad-bg); border-color: #eec4b8; }
+.verdict-card.verdict-neutral { background: var(--surface-2); }
+.verdict-head { font-weight: 700; font-size: 14.5px; margin-bottom: 10px; color: var(--green-900); }
+.verdict-card.verdict-over .verdict-head { color: var(--bad); }
+.verdict-rows { display: flex; flex-direction: column; gap: 6px; font-size: 13px; margin-bottom: 12px; }
+.verdict-rows > div { display: flex; justify-content: space-between; gap: 12px; }
+.verdict-rows span { color: var(--ink-soft); }
+.verdict-rows strong { color: var(--ink); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.budget-gauge { margin: 4px 0 12px; }
+.bg-track { height: 10px; border-radius: 999px; background: #e6e1d6; overflow: hidden; }
+.bg-fill { height: 100%; border-radius: 999px; transition: width .4s ease; }
+.bg-fill.ok { background: var(--ok); }
+.bg-fill.over { background: var(--bad); }
+.bg-fill.neutral { background: var(--green-300); }
+.bg-scale { display: flex; justify-content: space-between; font-size: 11px; color: var(--ink-faint); margin-top: 4px; }
+.verdict-detail { font-size: 13px; color: var(--ink-soft); line-height: 1.5; }
+.verdict-hint { margin-top: 10px; font-size: 12.5px; color: var(--green-700); background: var(--green-50); border-radius: var(--radius-sm); padding: 8px 10px; }
+
 /* =============================================================
    BRIEF (krok końcowy)
    ============================================================= */

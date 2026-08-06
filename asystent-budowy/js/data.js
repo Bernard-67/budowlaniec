@@ -83,6 +83,16 @@ const STAGES = {
         effects: { checklist: ['preferencje'], progress: 'pomysl' },
       },
       {
+        type: 'dom_params',
+        intro: 'Zanim oszacuję koszt, doprecyzujmy metraż. Podaj przybliżoną **powierzchnię użytkową** domu oraz — jeśli planujesz — **powierzchnię garażu**. To wystarczy, żeby policzyć orientacyjny koszt budowy.',
+        effects: { progress: 'pomysl' },
+      },
+      {
+        type: 'koszt_standard',
+        intro: 'Na podstawie metrażu i uśrednionych stawek za m² policzyłem orientacyjny koszt budowy w trzech standardach wykończenia. Wybierz ten, który Cię interesuje — wyląduje w karcie „Kosztorys i materiały” po prawej.',
+        effects: { checklist: ['kosztorys'], progress: 'pomysl' },
+      },
+      {
         type: 'choice',
         key: 'budzet',
         question: 'Jaki budżet całkowity bierzesz pod uwagę? (dom + działka)',
@@ -93,6 +103,11 @@ const STAGES = {
           { label: 'powyżej 900 tys. zł', value: '900+', reply: 'Powyżej 900 tys. zł — możemy myśleć o wyższym standardzie wykończenia.' },
         ],
         effects: { checklist: ['budzet'], progress: 'pomysl' },
+      },
+      {
+        type: 'budzet_ocena',
+        intro: 'Zestawmy teraz policzony koszt budowy z Twoim budżetem.',
+        effects: { progress: 'pomysl' },
       },
       {
         type: 'text',
@@ -278,6 +293,110 @@ function computeKosztorys() {
   ];
 }
 
+/* -------------------------------------------------------------
+   Kalkulator kosztu wg standardu wykończenia (mock).
+   Stawki uśrednione zł/m² — koszt budowy „pod klucz”, dane orientacyjne.
+   ------------------------------------------------------------- */
+const BUILD_STANDARDS = [
+  {
+    key: 'niski',
+    label: 'Niski (ekonomiczny)',
+    rateDom: 4200,
+    rateGaraz: 2600,
+    opis: 'Materiały podstawowe, proste rozwiązania, wykończenie budżetowe.',
+  },
+  {
+    key: 'sredni',
+    label: 'Średni (optymalny)',
+    rateDom: 5600,
+    rateGaraz: 3200,
+    opis: 'Dobre materiały i popularne technologie — zbalansowana jakość do ceny.',
+    featured: true,
+  },
+  {
+    key: 'wysoki',
+    label: 'Wysoki (premium)',
+    rateDom: 7800,
+    rateGaraz: 4300,
+    opis: 'Materiały wysokiej jakości, rozwiązania energooszczędne, bogate wykończenie.',
+  },
+];
+
+/* Liczy koszt dla każdego standardu na podstawie powierzchni (m²) */
+function computeCostByStandard(powUzytkowa, powGarazu) {
+  const pu = Number(powUzytkowa) || 0;
+  const pg = Number(powGarazu) || 0;
+  return BUILD_STANDARDS.map(s => {
+    const kosztDom = s.rateDom * pu;
+    const kosztGaraz = s.rateGaraz * pg;
+    return {
+      key: s.key,
+      label: s.label,
+      opis: s.opis,
+      featured: !!s.featured,
+      rateDom: s.rateDom,
+      rateGaraz: s.rateGaraz,
+      kosztDom,
+      kosztGaraz,
+      total: kosztDom + kosztGaraz,
+    };
+  });
+}
+
+/* -------------------------------------------------------------
+   Ocena budżetu — zestawienie kosztu budowy z zadeklarowanym budżetem.
+   Progi w zł. `obejmuje` mówi, co budżet ma pokryć (wpływa na komentarz).
+   ------------------------------------------------------------- */
+const BUDGET_BOUNDS = {
+  '600':  { min: 0,      max: 600000,  label: 'do 600 tys. zł',      obejmuje: 'dom + działka' },
+  '900':  { min: 600000, max: 900000,  label: '600–900 tys. zł',     obejmuje: 'dom + działka' },
+  '900+': { min: 900000, max: null,    label: 'powyżej 900 tys. zł', obejmuje: 'dom + działka' },
+  '500':  { min: 0,      max: 500000,  label: 'do 500 tys. zł',      obejmuje: 'sam dom' },
+  '800':  { min: 500000, max: 800000,  label: '500–800 tys. zł',     obejmuje: 'sam dom' },
+  '800+': { min: 800000, max: null,    label: 'powyżej 800 tys. zł', obejmuje: 'sam dom' },
+};
+
+/* Best-effort parsowanie budżetu z tekstu swobodnego, np. „700 tys”, „1,2 mln”, „650000” */
+function parseBudgetFreeText(txt) {
+  if (typeof txt !== 'string') return null;
+  const t = txt.toLowerCase();
+  const m = t.replace(/\s/g, '').match(/\d+[.,]?\d*/);
+  if (!m) return null;
+  let n = parseFloat(m[0].replace(',', '.'));
+  if (!n) return null;
+  if (/mln|milion/.test(t)) n *= 1000000;
+  else if (/tys|tyś/.test(t)) n *= 1000;
+  else if (n < 10000) n *= 1000; // „700” → zakładamy 700 tys.
+  return Math.round(n) || null;
+}
+
+/* Zwraca werdykt: status ok | over | open | unknown + liczby do komentarza i wskaźnika */
+function assessBudget(cost, budgetValue) {
+  let b = BUDGET_BOUNDS[budgetValue];
+  if (!b) {
+    const parsed = parseBudgetFreeText(budgetValue);
+    if (parsed == null) return { status: 'unknown', cost };
+    b = { min: 0, max: parsed, label: `ok. ${formatPln(parsed)}`, obejmuje: null };
+  }
+  const out = {
+    status: '', cost,
+    budgetLabel: b.label, budgetMin: b.min, budgetMax: b.max, obejmuje: b.obejmuje,
+  };
+  if (b.max == null) {
+    out.status = 'open';
+    out.pct = 0;
+  } else if (cost > b.max) {
+    out.status = 'over';
+    out.overBy = cost - b.max;
+    out.pct = 1;
+  } else {
+    out.status = 'ok';
+    out.margin = b.max - cost;
+    out.pct = cost / b.max;
+  }
+  return out;
+}
+
 /* Przykładowe oferty wstrzykiwane do textarea */
 const SAMPLE_OFERTY = `Oferta A — "BudDom Sp. z o.o."
 Zakres: stan surowy zamknięty. Cena: 385 000 zł. Termin: 7 miesięcy. Gwarancja 5 lat. Materiały po stronie wykonawcy.
@@ -358,7 +477,9 @@ function generateBrief(state) {
     title: '3. Zakres i parametry inwestycji',
     text: state.stage === 'gotowy_projekt'
       ? 'Dom parterowy z poddaszem użytkowym, ok. 140 m² powierzchni użytkowej, dach dwuspadowy (nachylenie 40°), wysokość 8,4 m. Parametry odczytane z wgranego projektu budowlanego.'
-      : `Preferowany typ: ${typDomu}. Szczegółowe parametry (metraż, liczba kondygnacji, dach) zostaną ustalone na etapie projektu budowlanego.`,
+      : (a.powUzytkowa
+          ? `Preferowany typ: ${typDomu}. Zakładana powierzchnia użytkowa: ${formatNum(a.powUzytkowa)} m²${a.powGarazu > 0 ? `, garaż ${formatNum(a.powGarazu)} m²` : ' (bez garażu)'}. Pozostałe parametry (liczba kondygnacji, dach) do ustalenia na etapie projektu budowlanego.`
+          : `Preferowany typ: ${typDomu}. Szczegółowe parametry (metraż, liczba kondygnacji, dach) zostaną ustalone na etapie projektu budowlanego.`),
   });
 
   if (state.progress && progressIndex(state.progress) >= progressIndex('mpzp') || state.checklist.mpzp) {
@@ -370,10 +491,13 @@ function generateBrief(state) {
   }
 
   if (state.checklist.kosztorys) {
+    const ks = state.kosztStandard;
     sekcje.push({
       id: 'kosztorys',
       title: '5. Kosztorys i materiały',
-      text: `Szacunkowy koszt realizacji: ${formatPln(state.kosztorysSuma || 715000)}. Największe pozycje: stan surowy otwarty i wykończenie wnętrz. Kwoty uśrednione (dane syntetyczne), do korekty w miarę zbierania ofert.`,
+      text: ks
+        ? `Orientacyjny koszt budowy (standard ${ks.label.toLowerCase()}): ${formatPln(ks.total)}. Wyliczony z powierzchni użytkowej ${formatNum(ks.powUzytkowa)} m²${ks.powGarazu > 0 ? ` i garażu ${formatNum(ks.powGarazu)} m²` : ''} na uśrednionych stawkach za m² (dane syntetyczne). Do uściślenia po powstaniu projektu i zebraniu ofert.`
+        : `Szacunkowy koszt realizacji: ${formatPln(state.kosztorysSuma || 715000)}. Największe pozycje: stan surowy otwarty i wykończenie wnętrz. Kwoty uśrednione (dane syntetyczne), do korekty w miarę zbierania ofert.`,
     });
   }
 

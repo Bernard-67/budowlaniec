@@ -145,7 +145,7 @@ const STAGES = {
     steps: [
       {
         type: 'text',
-        text: 'Świetnie, że masz już działkę — to konkretny punkt zaczepienia. Najpierw dopytam o Twoją wizję, a potem sprawdzimy, co plan miejscowy (MPZP) pozwala na niej zbudować.',
+        text: 'Świetnie, że masz już działkę — to konkretny punkt zaczepienia. Najpierw dopytam o Twoją wizję i policzę orientacyjny koszt, a potem sprawdzimy, co plan miejscowy (MPZP) pozwala na niej zbudować.',
       },
       {
         type: 'choice',
@@ -160,28 +160,48 @@ const STAGES = {
         effects: { checklist: ['preferencje'], progress: 'dzialka' },
       },
       {
-        type: 'choice',
-        key: 'budzet',
-        question: 'Jaki budżet przewidujesz na sam dom (bez działki)?',
-        allowFree: true,
-        options: [
-          { label: 'do 500 tys. zł', value: '500', reply: 'Budżet do 500 tys. zł — dopilnujemy realnego zakresu.' },
-          { label: '500–800 tys. zł', value: '800', reply: 'Budżet 500–800 tys. zł daje komfort wyboru.' },
-          { label: 'powyżej 800 tys. zł', value: '800+', reply: 'Powyżej 800 tys. zł — możemy celować w wyższy standard.' },
-        ],
-        effects: { checklist: ['budzet', 'dzialka'], progress: 'dzialka' },
+        type: 'dom_params',
+        intro: 'Doprecyzujmy metraż domu, który chcesz postawić na tej działce. Podaj przybliżoną **powierzchnię użytkową** i — jeśli planujesz — **powierzchnię garażu**.',
+        effects: { progress: 'dzialka' },
+      },
+      {
+        type: 'koszt_standard',
+        intro: 'Na podstawie metrażu i uśrednionych stawek za m² policzyłem orientacyjny koszt budowy w trzech standardach wykończenia. Wybierz ten, który Cię interesuje.',
+        effects: { checklist: ['kosztorys'], progress: 'dzialka' },
+      },
+      {
+        type: 'dzialka_params',
+        owned: true,
+        intro: 'Podaj **powierzchnię swojej działki** — będzie potrzebna, żeby przeliczyć limity z MPZP (ile metrów możesz zabudować, ile zostawić na zieleń). Cenę za m² możesz podać opcjonalnie.',
+        effects: { checklist: ['dzialka'], progress: 'dzialka' },
+      },
+      {
+        type: 'budzet_input',
+        question: 'Jaki masz budżet na **sam dom** (działkę już masz)? Wpisz kwotę w złotych.',
+        obejmuje: 'sam dom',
+        effects: { checklist: ['budzet'], progress: 'dzialka' },
+      },
+      {
+        type: 'budzet_ocena',
+        intro: 'Zestawmy policzony koszt budowy z Twoim budżetem.',
+        effects: { progress: 'dzialka' },
       },
       {
         type: 'text',
-        text: 'Teraz najważniejszy krok dla działki: **analiza MPZP**. Jeśli masz treść planu (np. z geoportalu gminy), wklej ją poniżej. Porównam parametry Twojej wizji z zapisami planu i pokażę, gdzie jest zgodność, a gdzie uwaga. Jeśli nie masz planu pod ręką — użyj przykładowego, żeby zobaczyć jak to działa.',
+        text: 'Teraz najważniejszy krok dla działki: **analiza MPZP**. Wgraj plan miejscowy (PDF) swojej działki — wyciągnę z niego kluczowe zapisy i przeliczę limity zabudowy na metry dla Twojej powierzchni. Nie masz pliku pod ręką? Użyj przykładowego.',
       },
       {
-        type: 'mpzp',
+        type: 'mpzp_upload',
+        intro: 'Wgraj **MPZP swojej działki w PDF** (wypis albo tekst uchwały z geoportalu). Przyjmuję wyłącznie PDF z warstwą tekstową.',
+        formats: ['PDF'],
+        demoFiles: [
+          { name: 'mpzp_moja_dzialka.pdf', size: '1,3 MB' },
+        ],
         effects: { checklist: ['mpzp'], progress: 'mpzp' },
       },
       {
         type: 'text',
-        text: 'Masz już obraz tego, co plan dopuszcza. Kolejny krok to **projekt budowlany** — możesz kupić projekt gotowy i zaadaptować go do działki albo zlecić projekt indywidualny. Gdy będziesz mieć projekt, wróć tutaj — odblokujemy kosztorys i porównanie ofert. Na razie zbierzmy to, co już wiemy, w brief.',
+        text: 'Masz już obraz tego, co plan dopuszcza, i orientacyjny koszt. Kolejny krok to **projekt budowlany** — gotowy z adaptacją albo indywidualny. Gdy będziesz mieć projekt, wróć tutaj — odblokujemy szczegółowy kosztorys i porównanie ofert. Na razie zbierzmy wszystko w brief.',
       },
       {
         type: 'brief',
@@ -581,7 +601,7 @@ function generateBrief(state) {
     text: state.stage === 'gotowy_projekt'
       ? 'Dom parterowy z poddaszem użytkowym, ok. 140 m² powierzchni użytkowej, dach dwuspadowy (nachylenie 40°), wysokość 8,4 m. Parametry odczytane z wgranego projektu budowlanego.'
       : (a.powUzytkowa
-          ? `Preferowany typ: ${typDomu}. Zakładana powierzchnia użytkowa: ${formatNum(a.powUzytkowa)} m²${a.powGarazu > 0 ? `, garaż ${formatNum(a.powGarazu)} m²` : ' (bez garażu)'}. Pozostałe parametry (liczba kondygnacji, dach) do ustalenia na etapie projektu budowlanego.`
+          ? `Preferowany typ: ${typDomu}. Zakładana powierzchnia użytkowa: ${formatNum(a.powUzytkowa)} m²${a.powGarazu > 0 ? `, garaż ${formatNum(a.powGarazu)} m²` : ' (bez garażu)'}.${state.dzialka ? ` Działka: ${formatNum(state.dzialka.area)} m²${state.dzialka.owned ? ' (posiadana)' : ''}.` : ''} Pozostałe parametry (liczba kondygnacji, dach) do ustalenia na etapie projektu budowlanego.`
           : `Preferowany typ: ${typDomu}. Szczegółowe parametry (metraż, liczba kondygnacji, dach) zostaną ustalone na etapie projektu budowlanego.`),
   });
 
@@ -616,7 +636,7 @@ function generateBrief(state) {
     if (ks) {
       const dz = state.dzialka;
       kosztText = `Orientacyjny koszt budowy (standard ${ks.label.toLowerCase()}): ${formatPln(ks.total)}. Wyliczony z powierzchni użytkowej ${formatNum(ks.powUzytkowa)} m²${ks.powGarazu > 0 ? ` i garażu ${formatNum(ks.powGarazu)} m²` : ''} na uśrednionych stawkach za m² (dane syntetyczne).`;
-      if (dz) kosztText += ` Szacowany zakup działki (${formatNum(dz.area)} m² × ${formatNum(dz.pricePerM2)} zł/m²): ${formatPln(dz.cost)}. Łączna inwestycja (dom + działka): ${formatPln(ks.total + dz.cost)}.`;
+      if (dz && !dz.owned) kosztText += ` Szacowany zakup działki (${formatNum(dz.area)} m² × ${formatNum(dz.pricePerM2)} zł/m²): ${formatPln(dz.cost)}. Łączna inwestycja (dom + działka): ${formatPln(ks.total + dz.cost)}.`;
       kosztText += ' Do uściślenia po powstaniu projektu i zebraniu ofert.';
     } else {
       kosztText = `Szacunkowy koszt realizacji: ${formatPln(state.kosztorysSuma || 715000)}. Największe pozycje: stan surowy otwarty i wykończenie wnętrz. Kwoty uśrednione (dane syntetyczne), do korekty w miarę zbierania ofert.`;

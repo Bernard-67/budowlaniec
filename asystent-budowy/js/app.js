@@ -335,30 +335,35 @@ function updateInvestmentCard() {
   if (!ks) return;
   unlockCard('card-kosztorys');
   const dz = state.dzialka;
+  const includePlot = !!(dz && !dz.owned);   // działkę posiadaną liczymy osobno (nie w sumie budowy)
   const rows = [
     `<tr><td class="st-param">Powierzchnia użytkowa<br><span style="color:var(--ink-faint);font-size:11px">${formatNum(ks.powUzytkowa)} m² × ${formatNum(ks.rateDom)} zł/m²</span></td><td class="st-val">${formatNum(ks.kosztDom)} zł</td></tr>`,
   ];
   if (ks.powGarazu > 0) {
     rows.push(`<tr><td class="st-param">Garaż<br><span style="color:var(--ink-faint);font-size:11px">${formatNum(ks.powGarazu)} m² × ${formatNum(ks.rateGaraz)} zł/m²</span></td><td class="st-val">${formatNum(ks.kosztGaraz)} zł</td></tr>`);
   }
-  if (dz) {
+  if (includePlot) {
     rows.push(`<tr><td class="st-param">Zakup działki<br><span style="color:var(--ink-faint);font-size:11px">${formatNum(dz.area)} m² × ${formatNum(dz.pricePerM2)} zł/m²</span></td><td class="st-val">${formatNum(dz.cost)} zł</td></tr>`);
   }
-  const total = ks.total + (dz ? dz.cost : 0);
-  const totalLabel = dz ? 'Łączna inwestycja' : 'Razem (szacunkowo)';
+  const total = ks.total + (includePlot ? dz.cost : 0);
+  const totalLabel = includePlot ? 'Łączna inwestycja' : 'Razem (szacunkowo)';
   const body = $('#card-kosztorys-body');
   body.innerHTML = `
-    <p class="mpzp-summary">Standard: <strong>${ks.label}</strong>${dz ? ' · z zakupem działki' : ''} · szacunek na uśrednionych stawkach.</p>
+    <p class="mpzp-summary">Standard: <strong>${ks.label}</strong>${includePlot ? ' · z zakupem działki' : ''} · szacunek na uśrednionych stawkach.</p>
     <table class="side-table">${rows.join('')}</table>
     <div class="kosztorys-suma"><span class="ks-label">${totalLabel}</span><span class="ks-val">${formatPln(total)}</span></div>`;
 }
 
-/* ---------------- Krok: Działka (metraż + cena za m²) ---------------- */
+/* ---------------- Krok: Działka (posiadana albo szacunek zakupu) ----------------
+   step.owned === true  -> działka już posiadana: powierzchnia wymagana (do limitów
+   MPZP), cena opcjonalna i informacyjna, NIE doliczana do inwestycji.
+   w przeciwnym razie    -> szacunek przyszłego zakupu (dom + działka). */
 function renderDzialkaParams(step) {
+  const owned = !!step.owned;
   assistantSay(md(step.intro), () => {
     const block = addActionBlock();
     block.innerHTML = `
-      <div class="widget-label">🌳 Działka (szacunek zakupu)</div>
+      <div class="widget-label">🌳 ${owned ? 'Twoja działka' : 'Działka (szacunek zakupu)'}</div>
       <div class="param-grid">
         <div class="param-field">
           <label for="dz-area">Powierzchnia działki <span class="pf-hint">(wymagane)</span></label>
@@ -368,7 +373,7 @@ function renderDzialkaParams(step) {
           </div>
         </div>
         <div class="param-field">
-          <label for="dz-price">Cena za m² <span class="pf-hint">(wymagane)</span></label>
+          <label for="dz-price">Cena za m² <span class="pf-hint">(${owned ? 'opcjonalnie' : 'wymagane'})</span></label>
           <div class="param-input-wrap">
             <input class="param-input" id="dz-price" type="text" inputmode="numeric" placeholder="np. 250">
             <span class="pi-unit">zł</span>
@@ -377,33 +382,42 @@ function renderDzialkaParams(step) {
       </div>
       <div class="param-error" id="dz-error" style="display:none"></div>
       <div class="widget-actions">
-        <button class="btn btn-primary" id="dz-next">Policz łączną inwestycję →</button>
-        <button class="btn btn-ghost" id="dz-skip">Nie mam jeszcze działki — pomiń</button>
+        <button class="btn btn-primary" id="dz-next">${owned ? 'Zapisz →' : 'Policz łączną inwestycję →'}</button>
+        ${owned ? '' : '<button class="btn btn-ghost" id="dz-skip">Nie mam jeszcze działki — pomiń</button>'}
       </div>`;
     scrollChat();
     $('#dz-area').focus();
 
     const showErr = msg => { const e = $('#dz-error'); e.textContent = msg; e.style.display = 'block'; };
 
-    $('#dz-skip').addEventListener('click', () => {
-      state.dzialka = null;
-      block.remove();
-      addBubble('user', 'Nie mam jeszcze działki — pomińmy jej wycenę.');
-      advance(step);
-    });
+    if (!owned) {
+      $('#dz-skip').addEventListener('click', () => {
+        state.dzialka = null;
+        block.remove();
+        addBubble('user', 'Nie mam jeszcze działki — pomińmy jej wycenę.');
+        advance(step);
+      });
+    }
 
     $('#dz-next').addEventListener('click', () => {
       const area = parseNum($('#dz-area').value);
       const price = parseNum($('#dz-price').value);
       if (!area || area < 100) { showErr('Podaj powierzchnię działki (min. 100 m²).'); $('#dz-area').focus(); return; }
-      if (!price || price < 10) { showErr('Podaj cenę za m² działki.'); $('#dz-price').focus(); return; }
-      const cost = area * price;
-      state.dzialka = { area, pricePerM2: price, cost };
+      if (!owned && (!price || price < 10)) { showErr('Podaj cenę za m² działki.'); $('#dz-price').focus(); return; }
+      const cost = price ? area * price : 0;
+      state.dzialka = { area, pricePerM2: price || null, cost, owned };
       block.remove();
-      addBubble('user', `Działka: ${formatNum(area)} m² × ${formatNum(price)} zł/m² = ${formatPln(cost)}.`);
       updateInvestmentCard();
-      const total = state.kosztStandard.total + cost;
-      assistantSay(`Policzone. Zakup działki to ok. <strong>${formatPln(cost)}</strong>, a razem z budową (${formatPln(state.kosztStandard.total)}) łączna inwestycja wynosi <strong>${formatPln(total)}</strong>. Zaraz zestawimy ją z Twoim budżetem.`, () => advance(step));
+
+      if (owned) {
+        addBubble('user', `Moja działka: ${formatNum(area)} m²${price ? ` × ${formatNum(price)} zł/m²` : ''}.`);
+        const valTxt = price ? ` (wartość ~${formatPln(cost)})` : '';
+        assistantSay(`Zapisane — Twoja działka ma ${formatNum(area)} m²${valTxt}. Wykorzystam jej powierzchnię do przeliczenia limitów z MPZP (ile możesz zabudować, ile zostawić na zieleń).`, () => advance(step));
+      } else {
+        addBubble('user', `Działka: ${formatNum(area)} m² × ${formatNum(price)} zł/m² = ${formatPln(cost)}.`);
+        const total = state.kosztStandard.total + cost;
+        assistantSay(`Policzone. Zakup działki to ok. <strong>${formatPln(cost)}</strong>, a razem z budową (${formatPln(state.kosztStandard.total)}) łączna inwestycja wynosi <strong>${formatPln(total)}</strong>. Zaraz zestawimy ją z Twoim budżetem.`, () => advance(step));
+      }
     });
   });
 }
@@ -462,9 +476,9 @@ function renderBudzetOcena(step) {
   if (!ks) { advance(step); return; }
 
   const dz = state.dzialka;
-  const plotIncluded = !!dz;
+  const plotIncluded = !!(dz && !dz.owned);    // działkę posiadaną pomijamy w budżecie
   const buildCost = ks.total;
-  const plotCost = dz ? dz.cost : 0;
+  const plotCost = plotIncluded ? dz.cost : 0;
   const cost = buildCost + plotCost;           // to zestawiamy z budżetem
   const verdict = assessBudget(cost, state.answers.budzet, state.budzetObejmuje);
   const stdLabel = (ks.label || '').toLowerCase();

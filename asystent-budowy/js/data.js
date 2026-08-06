@@ -113,6 +113,15 @@ const STAGES = {
         text: 'Skoro nie masz jeszcze działki — to najważniejszy najbliższy krok. Zanim kupisz, sprawdź czy działka ma **Miejscowy Plan Zagospodarowania Przestrzennego (MPZP)**. To dokument gminy, który mówi, co i jak można na niej zbudować. Znajdziesz go w geoportalu gminy albo w urzędzie. Bez tego łatwo kupić działkę, na której nie postawisz wymarzonego domu.',
       },
       {
+        type: 'mpzp_upload',
+        intro: 'Jeśli masz już upatrzoną działkę i jej **MPZP w PDF** (wypis albo tekst uchwały z geoportalu), wgraj plik — wyciągnę z niego najważniejsze dane do budowy. Przyjmuję wyłącznie PDF z warstwą tekstową. Jeśli dopiero szukasz, możesz pominąć.',
+        formats: ['PDF'],
+        demoFiles: [
+          { name: 'mpzp_wypis_dzialka.pdf', size: '1,3 MB' },
+        ],
+        effects: { checklist: ['mpzp'], progress: 'pomysl' },
+      },
+      {
         type: 'choice',
         key: 'lokalizacja',
         question: 'W jakiej okolicy chcesz szukać działki?',
@@ -278,6 +287,88 @@ function evaluateMpzp() {
       { param: 'Linia zabudowy od drogi',     plan: 'min. 6 m',                projekt: '6,5 m',                    status: 'ok' },
     ],
   };
+}
+
+/* -------------------------------------------------------------
+   Odczyt MPZP: parser tekstu (z pdf.js albo z SAMPLE_MPZP) do
+   kluczowych parametrów. Zwraca wiersze z flagą `found` (co znaleziono,
+   a czego w dokumencie nie ma) oraz procenty do przeliczeń dla działki.
+   ------------------------------------------------------------- */
+const MPZP_TYP_NOTE = {
+  parterowy: 'Dom parterowy jest dopuszczalny — pilnuj tylko powierzchni zabudowy, bo parterowiec ma duży rzut.',
+  poddasze:  'Dom z poddaszem użytkowym mieści się wprost w zapisach planu (do 2 kondygnacji, dach spadzisty).',
+  pietrowy:  'Dom piętrowy zmieści się w limicie wysokości i liczby kondygnacji.',
+};
+
+function parseMpzpText(raw) {
+  // Normalizacja: „ż” bywa w tych fontach mapowane na „Ŝ/ŝ”; ujednolicamy spacje.
+  const t = String(raw || '').replace(/[Ŝŝ]/g, 'ż').replace(/\s+/g, ' ');
+  const m = re => t.match(re);
+  const rows = [];
+  const percent = { zabudowa: null, biolCzynna: null };
+  const add = (param, wartosc) => rows.push({ param, wartosc: wartosc || 'nie określono w dokumencie', found: !!wartosc });
+
+  // Przeznaczenie
+  let przezn = null;
+  if (/\bMN\s*\/\s*U\b/i.test(t) || /jednorodzinn\w* z us[łl]ug/i.test(t)) przezn = 'MN/U — jednorodzinna z usługami';
+  else if (/\bMN\b/i.test(t) || /mieszkaniow\w* jednorodzinn/i.test(t)) przezn = 'MN — zabudowa jednorodzinna';
+  add('Przeznaczenie terenu', przezn);
+
+  // Wysokość w metrach (tylko gdy wprost o budynku/zabudowie)
+  let wys = null;
+  const mw = m(/wysoko\S*\s+(?:budynku\s+mieszkalnego|zabudowy|budynku)[^.]{0,40}?(\d{1,2}(?:[.,]\d)?)\s*m(?![\w²2])/i);
+  if (mw) wys = 'maks. ' + mw[1].replace('.', ',') + ' m';
+  add('Wysokość zabudowy', wys);
+
+  // Liczba kondygnacji
+  let kond = null;
+  const mk = m(/(\d+)\s+kondygnacj/i) || m(/kondygnacj\w*[^.\d]{0,25}(\d+)/i);
+  if (mk) kond = 'do ' + mk[1] + (/poddasz/i.test(t) ? ' (w tym poddasze)' : '');
+  add('Liczba kondygnacji', kond);
+
+  // Geometria dachu
+  const dachShape = /dwu\s*(?:-|lub|i|\/)?\s*wielospadow/i.test(t) ? 'dwu-/wielospadowy'
+                  : /dwuspadow/i.test(t) ? 'dwuspadowy'
+                  : /wielospadow/i.test(t) ? 'wielospadowy' : null;
+  let dachAngle = null;
+  const ma = m(/(\d{2})\s*[-–]\s*(\d{2})\s*(?:°|stopni|st\.)/);
+  if (ma) dachAngle = ma[1] + '–' + ma[2] + '°';
+  else if (/równym?\s+k[ąa]c/i.test(t)) dachAngle = 'równy kąt';
+  let dachVal = null;
+  if (dachShape) dachVal = dachShape + (dachAngle ? ', ' + dachAngle : '')
+    + (/zakaz[^.]{0,30}dach\w*[^.]{0,12}p[łl]askich/i.test(t) ? '; zakaz płaskich' : '');
+  add('Geometria dachu', dachVal);
+
+  // Maks. powierzchnia zabudowy [%]
+  let zab = null;
+  const mz = m(/powierzchni\w*\s+zabudowy[^.]{0,40}?(\d{1,3})\s*%/i);
+  if (mz) { zab = 'maks. ' + mz[1] + '%'; percent.zabudowa = parseInt(mz[1], 10); }
+  add('Maks. powierzchnia zabudowy', zab);
+
+  // Min. powierzchnia biologicznie czynna [%]
+  let biol = null;
+  const mb = m(/(?:biologicznie\s+czynn\S*|aktywn\S*\s+przyrodniczo)[^.]{0,60}?(\d{1,3})\s*%/i)
+          || m(/(\d{1,3})\s*%[^.]{0,40}?(?:biologicznie\s+czynn|przyrodniczo)/i);
+  if (mb) { biol = 'min. ' + mb[1] + '%'; percent.biolCzynna = parseInt(mb[1], 10); }
+  add('Min. pow. biologicznie czynna', biol);
+
+  // Linia zabudowy
+  let linia = null;
+  const ml = m(/nieprzekraczaln\S*\s+lini\S*\s+zabudowy[^.]{0,40}?(\d{1,3}(?:[.,]\d)?)\s*m\b/i);
+  if (ml) linia = 'min. ' + ml[1].replace('.', ',') + ' m';
+  else if (/nieprzekraczaln\S*\s+lini\S*\s+zabudowy/i.test(t)) linia = 'wg rysunku planu';
+  add('Linia zabudowy', linia);
+
+  // Bonusy — tylko gdy realnie znalezione
+  const mf = m(/front\w*\s+dzia[łl]ki[^.]{0,40}?(\d{1,3})\s*m\b/i);
+  if (mf) rows.push({ param: 'Min. szerokość frontu działki', wartosc: mf[1] + ' m', found: true });
+  const mo = m(/ogrodze\w*[^.]{0,60}?(?:maksimum|maks\w*|max\.?|do)\s*(\d(?:[.,]\d)?)\s*m\b/i);
+  if (mo) rows.push({ param: 'Maks. wysokość ogrodzeń', wartosc: mo[1].replace('.', ',') + ' m', found: true });
+  const mg = m(/(?:gospodarcz|us[łl]ug)\w*[^.]{0,60}?(\d{2,3})\s*m\s*2\b/i) || m(/(\d{2,3})\s*m\s*2\b[^.]{0,40}?(?:gospodarcz|us[łl]ug)/i);
+  if (mg) rows.push({ param: 'Maks. pow. bud. gospodarczego', wartosc: mg[1] + ' m²', found: true });
+
+  const foundCount = rows.filter(r => r.found).length;
+  return { rows, percent, foundCount };
 }
 
 /* Kosztorys — pozycje z uśrednionymi kwotami; edytowalne w UI */
@@ -495,11 +586,28 @@ function generateBrief(state) {
   });
 
   if (state.progress && progressIndex(state.progress) >= progressIndex('mpzp') || state.checklist.mpzp) {
-    sekcje.push({
-      id: 'mpzp',
-      title: '4. Zgodność z MPZP',
-      text: 'Zabudowa mieszkaniowa jednorodzinna (MN). Kluczowe ustalenia planu spełnione: wysokość ≤ 9 m, dach dwuspadowy 30–45°, powierzchnia zabudowy w limicie. Uwaga: powierzchnia biologicznie czynna (48%) jest tuż poniżej wymaganych 50% — do skorygowania na etapie projektu zagospodarowania działki.',
-    });
+    let mpzpText;
+    if (state.mpzp && state.mpzp.parsed) {
+      const p = state.mpzp.parsed;
+      const found = p.rows.filter(r => r.found).map(r => `${r.param.toLowerCase()}: ${r.wartosc}`);
+      mpzpText = `Odczytano z ${state.mpzp.sourceLabel}. Kluczowe ustalenia: ${found.join('; ')}.`;
+      const dz = state.dzialka;
+      if (dz && dz.area && (p.percent.biolCzynna != null || p.percent.zabudowa != null)) {
+        const bits = [];
+        if (p.percent.zabudowa != null) bits.push(`maks. ${formatNum(Math.round(dz.area * p.percent.zabudowa / 100))} m² zabudowy`);
+        if (p.percent.biolCzynna != null) bits.push(`min. ${formatNum(Math.round(dz.area * p.percent.biolCzynna / 100))} m² zieleni`);
+        mpzpText += ` Dla działki ${formatNum(dz.area)} m²: ${bits.join(', ')}.`;
+      }
+    } else if (state.stage === 'gotowy_projekt') {
+      mpzpText = 'Zabudowa mieszkaniowa jednorodzinna (MN). Kluczowe ustalenia planu spełnione: wysokość ≤ 9 m, dach dwuspadowy 30–45°, powierzchnia zabudowy w limicie. Uwaga: powierzchnia biologicznie czynna (48%) jest tuż poniżej wymaganych 50% — do skorygowania na etapie projektu zagospodarowania działki.';
+    } else {
+      mpzpText = 'Działka w terenie MN (zabudowa jednorodzinna). Plan dopuszcza: wysokość do 9 m, do 2 kondygnacji (z poddaszem), dach dwuspadowy 30–45°, powierzchnię zabudowy do 30% działki, min. 50% powierzchni biologicznie czynnej i linię zabudowy min. 6 m od drogi.';
+      const dz = state.dzialka;
+      if (dz && dz.area) {
+        mpzpText += ` Dla działki ${formatNum(dz.area)} m² oznacza to maks. ${formatNum(Math.round(0.30 * dz.area))} m² zabudowy i min. ${formatNum(Math.round(0.50 * dz.area))} m² zieleni.`;
+      }
+    }
+    sekcje.push({ id: 'mpzp', title: '4. Zgodność z MPZP', text: mpzpText });
   }
 
   if (state.checklist.kosztorys) {

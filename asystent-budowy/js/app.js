@@ -23,6 +23,7 @@ function freshState() {
     kosztorysEdited: false,
     kosztStandard: null,   // wybrany standard + koszt (etap „tylko pomysł”)
     dzialka: null,         // szacunek działki: { area, pricePerM2, cost }
+    mpzp: null,            // odczyt MPZP: { source, parsed }
   };
 }
 
@@ -88,6 +89,7 @@ function runStep() {
     case 'dzialka_params': return renderDzialkaParams(step);
     case 'budzet_input':   return renderBudzetInput(step);
     case 'budzet_ocena':   return renderBudzetOcena(step);
+    case 'mpzp_upload':    return renderMpzpUpload(step);
     case 'mpzp':           return renderMpzpWidget(step);
     case 'upload':         return renderUploadWidget(step);
     case 'kosztorys':      return renderKosztorysWidget(step);
@@ -554,6 +556,242 @@ function renderBudzetOcena(step) {
   });
 }
 
+/* Ikona pliku wg rozszerzenia (współdzielona przez widgety uploadu) */
+function fileIcon(name) {
+  if (/\.pdf$/i.test(name)) return '📕';
+  if (/\.(xls|xlsx|csv)$/i.test(name)) return '📊';
+  if (/\.(doc|docx)$/i.test(name)) return '📘';
+  if (/\.(ppt|pptx)$/i.test(name)) return '📙';
+  if (/\.(png|jpg|jpeg)$/i.test(name)) return '🖼️';
+  if (/\.dwg$/i.test(name)) return '📐';
+  return '📄';
+}
+
+/* Formaty -> rozszerzenia i atrybut accept (dla realnego <input type="file">) */
+const FORMAT_EXT = {
+  PDF: ['pdf'], PNG: ['png'], JPG: ['jpg', 'jpeg'], TXT: ['txt'],
+  DOC: ['doc', 'docx'], XLS: ['xls', 'xlsx', 'csv'], PPT: ['ppt', 'pptx'], DWG: ['dwg'],
+};
+function formatsToExt(formats) {
+  return (formats || []).flatMap(f => FORMAT_EXT[String(f).toUpperCase()] || [String(f).toLowerCase()]);
+}
+function formatsToAccept(formats) {
+  return formatsToExt(formats).map(e => '.' + e).join(',');
+}
+/* Rozmiar pliku w czytelnej formie (B / KB / MB, po polsku) */
+function formatFileSize(bytes) {
+  if (bytes == null || isNaN(bytes)) return '';
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(1).replace('.', ',') + ' MB';
+}
+
+/* pdf.js — worker (raz, przy starcie) */
+if (window.pdfjsLib) {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'vendor/pdf.worker.min.js';
+}
+
+/* Rekonstrukcja tekstu ze strony PDF wg pozycji X (spacja tylko przy realnej
+   przerwie) — bez tego pdf.js rozdziela polskie diakrytyki spacjami. */
+function reconstructPdfText(items) {
+  let text = '', prevEndX = null, prevY = null;
+  for (const it of items) {
+    if (!it.str) { if (it.hasEOL) { text += '\n'; prevEndX = null; } continue; }
+    const fs = Math.abs(it.transform[0]) || it.height || 10;
+    const tx = it.transform[4], ty = it.transform[5];
+    if (prevEndX !== null) {
+      if (prevY !== null && Math.abs(ty - prevY) > fs * 0.5) text += '\n';
+      else if (tx - prevEndX > fs * 0.2) text += ' ';
+    }
+    text += it.str;
+    prevEndX = tx + it.width;
+    prevY = ty;
+  }
+  return text;
+}
+
+/* Wyciąga tekst z pliku PDF (File) przez pdf.js */
+async function extractPdfText(file) {
+  const buf = await file.arrayBuffer();
+  const doc = await pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise;
+  let full = '';
+  for (let i = 1; i <= doc.numPages; i++) {
+    const page = await doc.getPage(i);
+    const tc = await page.getTextContent();
+    full += reconstructPdfText(tc.items) + '\n';
+  }
+  return full.replace(/[ \t]+/g, ' ');
+}
+
+/* ---------------- Krok: Upload MPZP (mock) + wyciągnięcie danych ---------------- */
+function renderMpzpUpload(step) {
+  assistantSay(md(step.intro), () => {
+    const block = addActionBlock();
+    block.innerHTML = `
+      <div class="widget-label">📋 Wgraj plik MPZP (plan miejscowy)</div>
+      <div style="font-size:13px;color:var(--ink-soft);margin-bottom:6px">Akceptowane formaty:</div>
+      <div class="format-list">${step.formats.map(f => `<span class="format-chip">${f}</span>`).join('')}</div>
+      <input type="file" id="mpzp-file" class="hidden-file" accept="${formatsToAccept(step.formats)}" multiple>
+      <div class="widget-actions">
+        <button class="btn btn-primary" id="mpzp-pick">📎 Załącz plik z dysku</button>
+        <button class="btn btn-secondary" id="mpzp-demo">Użyj przykładowego pliku</button>
+        <button class="btn btn-ghost" id="mpzp-skip">Nie mam jeszcze MPZP — pomiń</button>
+      </div>
+      <div class="mpzp-source-note" id="mpzp-source-note" style="display:none"></div>
+      <div class="param-error" id="mpzp-file-error" style="display:none"></div>
+      <ul class="file-list" id="mpzp-file-list"></ul>
+      <div class="widget-actions" id="mpzp-analyze-row" style="display:none">
+        <button class="btn btn-primary" id="mpzp-analyze">Wyciągnij kluczowe dane →</button>
+      </div>`;
+    scrollChat();
+
+    let source = null;                   // 'real' | 'demo' — źródło wykluczające
+    const attached = [];                 // {name, size, file, kind}
+    const listEl = $('#mpzp-file-list');
+    const acceptedExt = formatsToExt(step.formats);
+    const kindOf = name => /\.pdf$/i.test(name) ? 'pdf' : /\.(png|jpe?g)$/i.test(name) ? 'image' : 'other';
+
+    const addChip = (name, size, kind) => {
+      const rec = { name, size, kind };
+      attached.push(rec);
+      const li = document.createElement('li');
+      li.className = 'file-chip';
+      li.innerHTML = `<span class="fc-ico">${fileIcon(name)}</span>
+        <span class="fc-name">${name}</span>
+        <span class="fc-size">${size}</span>
+        <span class="fc-ok">✓</span>`;
+      listEl.appendChild(li);
+      $('#mpzp-analyze-row').style.display = 'flex';
+      scrollChat();
+      return rec;
+    };
+
+    // Ustala wykluczające źródło i blokuje drugą opcję
+    const lockSource = (src, noteHtml) => {
+      source = src;
+      $('#mpzp-demo').disabled = (src === 'real');
+      $('#mpzp-pick').disabled = (src === 'demo');
+      $('#mpzp-file').disabled = (src === 'demo');
+      const note = $('#mpzp-source-note');
+      note.innerHTML = noteHtml;
+      note.style.display = 'block';
+    };
+
+    // Realny plik z dysku
+    $('#mpzp-pick').addEventListener('click', () => $('#mpzp-file').click());
+    $('#mpzp-file').addEventListener('change', e => {
+      const err = $('#mpzp-file-error');
+      err.style.display = 'none';
+      const rejected = [];
+      [...e.target.files].forEach(file => {
+        const ext = (file.name.split('.').pop() || '').toLowerCase();
+        if (acceptedExt.length && !acceptedExt.includes(ext)) { rejected.push(file.name); return; }
+        addChip(file.name, formatFileSize(file.size), kindOf(file.name)).file = file;
+      });
+      if (rejected.length) {
+        err.textContent = `Pominięto pliki w niewspieranym formacie: ${rejected.join(', ')}.`;
+        err.style.display = 'block';
+      }
+      if (attached.length) lockSource('real', '📎 Źródło: <strong>Twoje pliki</strong> — odczyt realny. Przykładowy plan jest teraz zablokowany.');
+      e.target.value = '';
+    });
+
+    // Przykładowy plik (mock, treść z SAMPLE_MPZP)
+    $('#mpzp-demo').addEventListener('click', () => {
+      lockSource('demo', '📄 Źródło: <strong>przykładowy plan</strong>. Załączanie własnych plików jest teraz zablokowane.');
+      step.demoFiles.forEach((f, i) => setTimeout(() => addChip(f.name, f.size, 'pdf'), i * 220));
+    });
+
+    // Pomiń — NIE odhacza MPZP na checkliście (tylko efekt progress)
+    $('#mpzp-skip').addEventListener('click', () => {
+      block.remove();
+      addBubble('user', 'Nie mam jeszcze MPZP — pomińmy analizę planu.');
+      const skipStep = { ...step, effects: { progress: step.effects && step.effects.progress } };
+      assistantSay('Jasne. Gdy znajdziesz działkę, wróć tutaj z jej MPZP — wyciągnę z niego, co i jak możesz na niej zbudować.', () => advance(skipStep));
+    });
+
+    // Analiza — realny odczyt PDF (pdf.js) albo przykład; źródła się NIE łączą
+    $('#mpzp-analyze').addEventListener('click', async () => {
+      if (!attached.length) return;
+      block.remove();
+      addBubble('user', `Wgrałem MPZP (${source === 'demo' ? 'przykład' : 'plik z dysku'}): ${attached.map(f => f.name).join(', ')}.`);
+
+      const typing = showTyping();
+      let parsed = null, sourceLabel = '', failMsg = null;
+      try {
+        if (source === 'demo') {
+          parsed = parseMpzpText(SAMPLE_MPZP);
+          sourceLabel = 'przykładowego planu';
+        } else {
+          const pdf = attached.find(f => f.kind === 'pdf');
+          if (!pdf) {
+            failMsg = 'Załączyłeś obraz (JPG/PNG) — w prototypie odczytuję parametry tylko z <strong>PDF-a z warstwą tekstową</strong> (np. wypis/uchwała MPZP). Wgraj plik PDF albo użyj przykładowego planu.';
+          } else {
+            const text = await extractPdfText(pdf.file);
+            parsed = parseMpzpText(text);
+            sourceLabel = `Twojego pliku „${pdf.name}”`;
+            if (!parsed.foundCount) {
+              failMsg = `Odczytałem tekst z „${pdf.name}”, ale nie rozpoznałem w nim parametrów MPZP (może to inny dokument albo nietypowy układ zapisu).`;
+              parsed = null;
+            }
+          }
+        }
+      } catch (err) {
+        failMsg = 'Nie udało się odczytać pliku (' + err.message + ').';
+        parsed = null;
+      }
+      typing.remove();
+
+      if (!parsed) {
+        const skipStep = { ...step, effects: { progress: step.effects && step.effects.progress } };
+        assistantSay(failMsg, () => advance(skipStep));
+        return;
+      }
+
+      state.mpzp = { source, parsed, sourceLabel };
+      fillMpzpKeyDataCard(parsed, sourceLabel);
+
+      const dz = state.dzialka;
+      let msg = `Odczytałem <strong>${sourceLabel}</strong> i wyciągnąłem ${parsed.foundCount} kluczowych parametrów planu — szczegóły w karcie „Zgodność z MPZP” po prawej.`;
+      if (dz && dz.area && parsed.percent.biolCzynna != null) {
+        msg += ` Na działce ${formatNum(dz.area)} m² musisz zostawić min. <strong>${formatNum(Math.round(dz.area * parsed.percent.biolCzynna / 100))} m²</strong> zieleni`;
+        if (parsed.percent.zabudowa != null) msg += `, a zabudować maks. <strong>${formatNum(Math.round(dz.area * parsed.percent.zabudowa / 100))} m²</strong>`;
+        msg += '.';
+      }
+      msg += ' ' + (MPZP_TYP_NOTE[state.answers.typ_domu] || 'Twój dom jednorodzinny mieści się w ramach planu.');
+      assistantSay(msg, () => advance(step));
+    });
+  });
+}
+
+function showTyping() {
+  const typing = document.createElement('div');
+  typing.className = 'bubble assistant typing';
+  typing.innerHTML = `<div class="avatar">🏠</div><div class="bubble-body"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>`;
+  chatWindow().appendChild(typing);
+  scrollChat();
+  return typing;
+}
+
+function fillMpzpKeyDataCard(parsed, sourceLabel) {
+  unlockCard('card-mpzp');
+  const body = $('#card-mpzp-body');
+  const dz = state.dzialka;
+  let derivedHtml = '';
+  if (dz && dz.area) {
+    const bits = [];
+    if (parsed.percent.zabudowa != null) bits.push(`maks. zabudowa <strong>${formatNum(Math.round(dz.area * parsed.percent.zabudowa / 100))} m²</strong>`);
+    if (parsed.percent.biolCzynna != null) bits.push(`min. zieleń <strong>${formatNum(Math.round(dz.area * parsed.percent.biolCzynna / 100))} m²</strong>`);
+    if (bits.length) derivedHtml = `<div class="mpzp-derived">Dla działki ${formatNum(dz.area)} m²: ${bits.join(', ')}.</div>`;
+  }
+  body.innerHTML = `
+    <p class="mpzp-summary">Odczytano z: <strong>${sourceLabel}</strong>.</p>
+    <table class="side-table">
+      ${parsed.rows.map(r => `<tr class="${r.found ? '' : 'mpzp-missing'}"><td class="st-param">${r.param}</td><td class="st-val">${r.wartosc}</td></tr>`).join('')}
+    </table>
+    ${derivedHtml}`;
+}
+
 /* ---------------- Krok: MPZP ---------------- */
 function renderMpzpWidget(step) {
   const block = addActionBlock();
@@ -609,16 +847,6 @@ function renderUploadWidget(step) {
     </div>`;
   scrollChat();
 
-  const icoFor = name => {
-    if (/\.pdf$/i.test(name)) return '📕';
-    if (/\.(xls|xlsx|csv)$/i.test(name)) return '📊';
-    if (/\.(doc|docx)$/i.test(name)) return '📘';
-    if (/\.(ppt|pptx)$/i.test(name)) return '📙';
-    if (/\.(png|jpg|jpeg)$/i.test(name)) return '🖼️';
-    if (/\.dwg$/i.test(name)) return '📐';
-    return '📄';
-  };
-
   $('#up-demo').addEventListener('click', () => {
     const list = $('#file-list');
     list.innerHTML = '';
@@ -626,7 +854,7 @@ function renderUploadWidget(step) {
       setTimeout(() => {
         const li = document.createElement('li');
         li.className = 'file-chip';
-        li.innerHTML = `<span class="fc-ico">${icoFor(f.name)}</span>
+        li.innerHTML = `<span class="fc-ico">${fileIcon(f.name)}</span>
           <span class="fc-name">${f.name}</span>
           <span class="fc-size">${f.size}</span>
           <span class="fc-ok">✓</span>`;

@@ -1079,10 +1079,13 @@ function renderKosztorysWidget(step) {
   block.innerHTML = `
     <div class="widget-label">💰 Szacunkowy kosztorys (nazwy i kwoty edytowalne)</div>
     <table class="chat-table kosztorys-table">
-      <thead><tr><th>Pozycja</th><th style="text-align:right">Kwota</th></tr></thead>
+      <thead><tr><th>Pozycja</th><th style="text-align:right">Kwota</th><th></th></tr></thead>
       <tbody id="kosztorys-tbody"></tbody>
-      <tfoot><tr><td>Razem (szacunkowo)</td><td class="num" id="kosztorys-total"></td></tr></tfoot>
+      <tfoot><tr><td>Razem (szacunkowo)</td><td class="num" id="kosztorys-total"></td><td></td></tr></tfoot>
     </table>
+    <div class="widget-actions">
+      <button class="btn btn-ghost" id="kosztorys-add">+ Dodaj pozycję</button>
+    </div>
     <div class="widget-actions">
       <button class="btn btn-primary" id="kosztorys-accept">Zaakceptuj kosztorys →</button>
     </div>`;
@@ -1108,6 +1111,7 @@ function renderKosztorysWidget(step) {
       <tr>
         <td><input class="pozycja-input" data-idx="${idx}" type="text" value="${escAttr(it.pozycja)}"></td>
         <td class="num"><input class="kwota-input" data-idx="${idx}" type="text" value="${formatNum(it.kwota)}"> zł</td>
+        <td class="kt-actions"><button class="kt-del" data-idx="${idx}" title="Usuń pozycję" aria-label="Usuń pozycję">✕</button></td>
       </tr>`).join('');
 
     $$('.pozycja-input', tbody).forEach(inp => {
@@ -1119,10 +1123,20 @@ function renderKosztorysWidget(step) {
     });
     $$('.kwota-input', tbody).forEach(inp => {
       inp.addEventListener('input', () => {
-        items[+inp.dataset.idx].kwota = parseNum(inp.value);
+        const n = parseNum(inp.value);
+        inp.value = n ? formatNum(n) : '';   // formatowanie na żywo (spacja co tysiąc)
+        items[+inp.dataset.idx].kwota = n;
         recompute();
       });
       inp.addEventListener('change', markEdited);
+    });
+    $$('.kt-del', tbody).forEach(btn => {
+      btn.addEventListener('click', () => {
+        items.splice(+btn.dataset.idx, 1);
+        renderRows();
+        recompute();
+        markEdited();
+      });
     });
   };
 
@@ -1134,6 +1148,15 @@ function renderKosztorysWidget(step) {
   unlockCard('card-kosztorys');
   renderRows();
   recompute();
+
+  $('#kosztorys-add').addEventListener('click', () => {
+    items.push({ key: 'nowa_' + Date.now(), pozycja: '', kwota: 0 });
+    renderRows();
+    recompute();
+    markEdited();
+    const names = $$('.pozycja-input', block);
+    if (names.length) names[names.length - 1].focus();
+  });
 
   $('#kosztorys-accept').addEventListener('click', () => {
     block.remove();

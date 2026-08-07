@@ -419,6 +419,13 @@ html, body {
 }
 .chat-table .pozycja-input:hover { border-color: var(--line-strong); background: var(--surface-2); }
 .chat-table .pozycja-input:focus { outline: none; border-color: var(--green-600); background: #fff; }
+.chat-table .kt-actions { text-align: center; width: 34px; }
+.chat-table .kt-del {
+  background: transparent; border: none; cursor: pointer;
+  color: var(--ink-faint); font-size: 13px; line-height: 1; padding: 3px 6px; border-radius: 6px;
+  transition: color .12s ease, background .12s ease;
+}
+.chat-table .kt-del:hover { color: var(--bad); background: var(--bad-bg); }
 .chat-table tfoot td { font-weight: 700; color: var(--green-900); border-bottom: none; padding-top: 12px; }
 
 /* Parametry domu (metraż + garaż) */

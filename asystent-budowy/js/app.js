@@ -472,20 +472,20 @@ function renderBudzetInput(step) {
 /* ---------------- Krok: Ocena budżetu (koszt vs budżet) ---------------- */
 function renderBudzetOcena(step) {
   const ks = state.kosztStandard;
-  // Bezpiecznik: bez policzonego kosztu nie ma czego zestawiać
-  if (!ks) { advance(step); return; }
-
   const dz = state.dzialka;
   const plotIncluded = !!(dz && !dz.owned);    // działkę posiadaną pomijamy w budżecie
-  const buildCost = ks.total;
+  // Koszt budowy: z kalkulatora wg standardu albo z sumy szczegółowego kosztorysu
+  const buildCost = ks ? ks.total : (state.kosztorysSuma || 0);
+  if (!buildCost) { advance(step); return; }
   const plotCost = plotIncluded ? dz.cost : 0;
   const cost = buildCost + plotCost;           // to zestawiamy z budżetem
   const verdict = assessBudget(cost, state.answers.budzet, state.budzetObejmuje);
-  const stdLabel = (ks.label || '').toLowerCase();
+  const stdLabel = ks ? (ks.label || '').toLowerCase() : 'kosztorys szczegółowy';
+  const costPhrase = ks ? `Koszt budowy w standardzie ${stdLabel}` : 'Koszt wg kosztorysu';
 
   // Podpowiedź tańszego standardu (uwzględnia koszt działki, jeśli podana)
   let suggestionHtml = '';
-  if (verdict.status === 'over' && verdict.budgetMax != null) {
+  if (verdict.status === 'over' && verdict.budgetMax != null && ks) {
     const opts = computeCostByStandard(ks.powUzytkowa, ks.powGarazu);
     const fit = opts.filter(o => (o.total + plotCost) <= verdict.budgetMax);
     if (fit.length) {
@@ -521,11 +521,11 @@ function renderBudzetOcena(step) {
   } else if (verdict.status === 'open') {
     statusClass = 'neutral';
     headline = 'Budżet bez określonego limitu';
-    detail = `${plotIncluded ? `Łączna inwestycja (dom + działka) to ${formatPln(cost)}` : `Koszt budowy w standardzie ${stdLabel} to ${formatPln(cost)}`}. Budżet podałeś jako „${verdict.budgetLabel}”, bez górnej granicy — nie wyliczę dokładnego zapasu.${plotIncluded ? '' : ' Pamiętaj, że ma on pokryć także działkę.'}`;
+    detail = `${plotIncluded ? `Łączna inwestycja (dom + działka) to ${formatPln(cost)}` : `${costPhrase} to ${formatPln(cost)}`}. Budżet podałeś jako „${verdict.budgetLabel}”, bez górnej granicy — nie wyliczę dokładnego zapasu.${plotIncluded ? '' : ' Pamiętaj, że ma on pokryć także działkę.'}`;
   } else { // unknown
     statusClass = 'neutral';
     headline = 'Budżet podany opisowo';
-    detail = `${plotIncluded ? `Łączna inwestycja (dom + działka) to ${formatPln(cost)}` : `Koszt budowy w standardzie ${stdLabel} to ${formatPln(cost)}`}. Budżet podałeś swobodnie („${state.answers.budzet}”), więc nie zestawiam go liczbowo — dopisz konkretną kwotę, a policzę zapas.`;
+    detail = `${plotIncluded ? `Łączna inwestycja (dom + działka) to ${formatPln(cost)}` : `${costPhrase} to ${formatPln(cost)}`}. Budżet podałeś swobodnie („${state.answers.budzet}”), więc nie zestawiam go liczbowo — dopisz konkretną kwotę, a policzę zapas.`;
   }
 
   // Wskaźnik (tylko dla budżetów z górną granicą)

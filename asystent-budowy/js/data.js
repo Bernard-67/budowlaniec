@@ -227,7 +227,7 @@ const STAGES = {
           { name: 'kosztorys_wstepny.xls',  size: '86 KB' },
           { name: 'dzialka_zdjecie.jpg',    size: '2,1 MB' },
         ],
-        effects: { checklist: ['projekt', 'preferencje', 'budzet', 'dzialka'], progress: 'projekt' },
+        effects: { checklist: ['projekt', 'preferencje'], progress: 'projekt' },
       },
       {
         type: 'choice',
@@ -241,11 +241,22 @@ const STAGES = {
         effects: { checklist: [], progress: 'projekt' },
       },
       {
-        type: 'text',
-        text: 'Teraz zestawmy projekt z **MPZP** Twojej działki. Wklej treść planu miejscowego albo użyj przykładowego, żeby zobaczyć wynik porównania.',
+        type: 'dzialka_params',
+        owned: true,
+        intro: 'Podaj **powierzchnię działki**, na której ma stanąć projekt — przeliczę na nią limity z MPZP (ile możesz zabudować, ile zostawić na zieleń). Cenę za m² możesz podać opcjonalnie.',
+        effects: { checklist: ['dzialka'], progress: 'projekt' },
       },
       {
-        type: 'mpzp',
+        type: 'text',
+        text: 'Teraz zestawmy projekt z **MPZP** Twojej działki. Wgraj plan miejscowy (PDF) — wyciągnę z niego kluczowe zapisy i przeliczę limity zabudowy na Twoją działkę. Nie masz pliku pod ręką? Użyj przykładowego.',
+      },
+      {
+        type: 'mpzp_upload',
+        intro: 'Wgraj **MPZP w PDF** (wypis albo tekst uchwały z geoportalu). Przyjmuję wyłącznie PDF z warstwą tekstową.',
+        formats: ['PDF'],
+        demoFiles: [
+          { name: 'mpzp_dzialka.pdf', size: '1,3 MB' },
+        ],
         effects: { checklist: ['mpzp'], progress: 'mpzp' },
       },
       {
@@ -255,6 +266,17 @@ const STAGES = {
       {
         type: 'kosztorys',
         effects: { checklist: ['kosztorys'], progress: 'kosztorys' },
+      },
+      {
+        type: 'budzet_input',
+        question: 'Jaki masz budżet na **budowę** (bez działki, którą już masz)? Wpisz kwotę w złotych.',
+        obejmuje: 'sam dom',
+        effects: { checklist: ['budzet'], progress: 'kosztorys' },
+      },
+      {
+        type: 'budzet_ocena',
+        intro: 'Zestawmy sumę kosztorysu z Twoim budżetem.',
+        effects: { progress: 'kosztorys' },
       },
       {
         type: 'text',
@@ -575,7 +597,7 @@ function generateBrief(state) {
 
   // Zbierzmy dosłowne wypowiedzi użytkownika (kontrast: 2 zdania -> pełny brief).
   // Pomijamy wartości strukturalne/liczbowe (metraż, standard, budżet) — nie są cytatami.
-  const QUOTE_SKIP = ['powUzytkowa', 'powGarazu', 'standard', 'budzet'];
+  const QUOTE_SKIP = ['powUzytkowa', 'powGarazu', 'standard', 'budzet', 'potwierdzenie_metrazu'];
   const cytaty = Object.entries(a).filter(([k, v]) => v && !QUOTE_SKIP.includes(k)).map(([, v]) => v);
   const cytatBlok = cytaty.length
     ? cytaty.map(c => `„${c}”`).join(' · ')

@@ -1067,23 +1067,20 @@ function fillMpzpCard(result) {
     </table>`;
 }
 
+/* Escape wartości do atrybutu HTML (value="...") */
+function escAttr(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/"/g, '&quot;'); }
+
 /* ---------------- Krok: Kosztorys ---------------- */
 function renderKosztorysWidget(step) {
   const items = computeKosztorys();
   state.kosztorys = items;
 
   const block = addActionBlock();
-  const rowsHtml = items.map(it => `
-    <tr>
-      <td>${it.pozycja}</td>
-      <td class="num"><input class="kwota-input" data-key="${it.key}" type="text" value="${formatNum(it.kwota)}"> zł</td>
-    </tr>`).join('');
-
   block.innerHTML = `
-    <div class="widget-label">💰 Szacunkowy kosztorys (kwoty edytowalne)</div>
-    <table class="chat-table">
+    <div class="widget-label">💰 Szacunkowy kosztorys (nazwy i kwoty edytowalne)</div>
+    <table class="chat-table kosztorys-table">
       <thead><tr><th>Pozycja</th><th style="text-align:right">Kwota</th></tr></thead>
-      <tbody>${rowsHtml}</tbody>
+      <tbody id="kosztorys-tbody"></tbody>
       <tfoot><tr><td>Razem (szacunkowo)</td><td class="num" id="kosztorys-total"></td></tr></tfoot>
     </table>
     <div class="widget-actions">
@@ -1092,11 +1089,41 @@ function renderKosztorysWidget(step) {
   scrollChat();
 
   const recompute = () => {
-    let sum = 0;
-    $$('.kwota-input', block).forEach(inp => { sum += parseNum(inp.value); });
+    const sum = items.reduce((s, it) => s + (it.kwota || 0), 0);
     $('#kosztorys-total').textContent = formatNum(sum) + ' zł';
     state.kosztorysSuma = sum;
     updateKosztorysCard(items, sum);
+  };
+
+  const markEdited = () => {
+    if (!state.kosztorysEdited) {
+      state.kosztorysEdited = true;
+      pushHistory('Ręczna korekta pozycji', state.kosztorysSuma);
+    }
+  };
+
+  const renderRows = () => {
+    const tbody = $('#kosztorys-tbody', block);
+    tbody.innerHTML = items.map((it, idx) => `
+      <tr>
+        <td><input class="pozycja-input" data-idx="${idx}" type="text" value="${escAttr(it.pozycja)}"></td>
+        <td class="num"><input class="kwota-input" data-idx="${idx}" type="text" value="${formatNum(it.kwota)}"> zł</td>
+      </tr>`).join('');
+
+    $$('.pozycja-input', tbody).forEach(inp => {
+      inp.addEventListener('input', () => {
+        items[+inp.dataset.idx].pozycja = inp.value;
+        updateKosztorysCard(items, state.kosztorysSuma);
+      });
+      inp.addEventListener('change', markEdited);
+    });
+    $$('.kwota-input', tbody).forEach(inp => {
+      inp.addEventListener('input', () => {
+        items[+inp.dataset.idx].kwota = parseNum(inp.value);
+        recompute();
+      });
+      inp.addEventListener('change', markEdited);
+    });
   };
 
   // pierwsza wersja -> historia
@@ -1105,23 +1132,13 @@ function renderKosztorysWidget(step) {
   pushHistory('Wygenerowany kosztorys', initialSum);
 
   unlockCard('card-kosztorys');
-  updateKosztorysCard(items, initialSum);
+  renderRows();
   recompute();
-
-  $$('.kwota-input', block).forEach(inp => {
-    inp.addEventListener('input', recompute);
-    inp.addEventListener('change', () => {
-      if (!state.kosztorysEdited) {
-        state.kosztorysEdited = true;
-        pushHistory('Ręczna korekta pozycji', state.kosztorysSuma);
-      }
-    });
-  });
 
   $('#kosztorys-accept').addEventListener('click', () => {
     block.remove();
     addBubble('user', `Zatwierdzam kosztorys na ${formatNum(state.kosztorysSuma)} zł.`);
-    assistantSay('Zapisane. Każda zmiana kwot trafia do historii wersji (przycisk „Historia” u góry) — wracaj i koryguj je w miarę zbierania ofert.', () => advance(step));
+    assistantSay('Zapisane. Każda zmiana trafia do historii wersji (przycisk „Historia” u góry) — wracaj i koryguj je w miarę zbierania ofert.', () => advance(step));
   });
 }
 

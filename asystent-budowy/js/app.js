@@ -1085,6 +1085,7 @@ function renderKosztorysWidget(step) {
     </table>
     <div class="widget-actions">
       <button class="btn btn-ghost" id="kosztorys-add">+ Dodaj pozycję</button>
+      <button class="btn btn-secondary" id="kosztorys-export">⬇ Eksport do Excela (.csv)</button>
     </div>
     <div class="widget-actions">
       <button class="btn btn-primary" id="kosztorys-accept">Zaakceptuj kosztorys →</button>
@@ -1158,6 +1159,8 @@ function renderKosztorysWidget(step) {
     if (names.length) names[names.length - 1].focus();
   });
 
+  $('#kosztorys-export').addEventListener('click', () => exportKosztorysCsv(items));
+
   $('#kosztorys-accept').addEventListener('click', () => {
     block.remove();
     addBubble('user', `Zatwierdzam kosztorys na ${formatNum(state.kosztorysSuma)} zł.`);
@@ -1172,6 +1175,27 @@ function updateKosztorysCard(items, sum) {
       ${items.map(it => `<tr><td class="st-param">${it.pozycja}</td><td class="st-val">${formatNum(it.kwota)} zł</td></tr>`).join('')}
     </table>
     <div class="kosztorys-suma"><span class="ks-label">Razem</span><span class="ks-val" id="side-total">${formatNum(sum)} zł</span></div>`;
+}
+
+/* CSV kosztorysu pod polski Excel: separator ';', BOM UTF-8, kwoty jako liczby */
+function buildKosztorysCsv(items) {
+  const esc = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+  const sep = ';';
+  const lines = [[esc('Pozycja'), esc('Kwota (zł)')].join(sep)];
+  let sum = 0;
+  items.forEach(it => { sum += (it.kwota || 0); lines.push([esc(it.pozycja), it.kwota || 0].join(sep)); });
+  lines.push([esc('Razem'), sum].join(sep));
+  return '﻿' + lines.join('\r\n');
+}
+
+function exportKosztorysCsv(items) {
+  const blob = new Blob([buildKosztorysCsv(items)], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'kosztorys.csv';
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 /* ---------------- Krok: Oferty ---------------- */

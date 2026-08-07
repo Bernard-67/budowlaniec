@@ -675,7 +675,15 @@ function renderMpzpUpload(step) {
       li.innerHTML = `<span class="fc-ico">${fileIcon(name)}</span>
         <span class="fc-name">${name}</span>
         <span class="fc-size">${size}</span>
-        <span class="fc-ok">✓</span>`;
+        <span class="fc-ok">✓</span>
+        <button class="fc-remove" title="Usuń plik" aria-label="Usuń plik">✕</button>`;
+      li.querySelector('.fc-remove').addEventListener('click', () => {
+        const i = attached.indexOf(rec);
+        if (i >= 0) attached.splice(i, 1);
+        li.remove();
+        if (!attached.length) { $('#mpzp-analyze-row').style.display = 'none'; resetSource(); }
+        scrollChat();
+      });
       listEl.appendChild(li);
       $('#mpzp-analyze-row').style.display = 'flex';
       scrollChat();
@@ -691,6 +699,17 @@ function renderMpzpUpload(step) {
       const note = $('#mpzp-source-note');
       note.innerHTML = noteHtml;
       note.style.display = 'block';
+    };
+
+    // Reset po usunięciu wszystkich plików — znów można wybrać źródło
+    const resetSource = () => {
+      source = null;
+      $('#mpzp-demo').disabled = false;
+      $('#mpzp-pick').disabled = false;
+      $('#mpzp-file').disabled = false;
+      const note = $('#mpzp-source-note');
+      note.style.display = 'none';
+      note.innerHTML = '';
     };
 
     // Realny plik z dysku
@@ -842,7 +861,15 @@ function renderProjektUpload(step) {
       li.innerHTML = `<span class="fc-ico">${fileIcon(name)}</span>
         <span class="fc-name">${name}</span>
         <span class="fc-size">${size}</span>
-        <span class="fc-ok">✓</span>`;
+        <span class="fc-ok">✓</span>
+        <button class="fc-remove" title="Usuń plik" aria-label="Usuń plik">✕</button>`;
+      li.querySelector('.fc-remove').addEventListener('click', () => {
+        const i = attached.indexOf(rec);
+        if (i >= 0) attached.splice(i, 1);
+        li.remove();
+        if (!attached.length) { $('#prj-analyze-row').style.display = 'none'; resetSource(); }
+        scrollChat();
+      });
       listEl.appendChild(li);
       $('#prj-analyze-row').style.display = 'flex';
       scrollChat();
@@ -857,6 +884,17 @@ function renderProjektUpload(step) {
       const note = $('#prj-source-note');
       note.innerHTML = noteHtml;
       note.style.display = 'block';
+    };
+
+    // Reset po usunięciu wszystkich plików — znów można wybrać źródło
+    const resetSource = () => {
+      source = null;
+      $('#prj-demo').disabled = false;
+      $('#prj-pick').disabled = false;
+      $('#prj-file').disabled = false;
+      const note = $('#prj-source-note');
+      note.style.display = 'none';
+      note.innerHTML = '';
     };
 
     $('#prj-pick').addEventListener('click', () => $('#prj-file').click());
@@ -904,20 +942,88 @@ function renderProjektUpload(step) {
       }
       typing.remove();
 
-      // Projekt jest wczytany niezależnie od liczby odczytanych parametrów
-      state.projekt = parsed ? { source, parsed, sourceLabel } : null;
-      if (parsed && parsed.powUzytkowa) state.answers.powUzytkowa = parsed.powUzytkowa;
-
-      let msg;
-      if (!parsed) {
-        msg = `${errMsg} Przyjmuję projekt bez odczytu parametrów — doprecyzujesz je w kosztorysie i briefie.`;
-      } else if (!parsed.foundCount) {
-        msg = `Wczytałem <strong>${sourceLabel}</strong>, ale nie rozpoznałem w nim typowych parametrów (metraż, kondygnacje). To nie problem — przechodzimy dalej, a szczegóły doprecyzujesz w kosztorysie i briefie.`;
-      } else {
-        const found = parsed.rows.filter(r => r.found).map(r => `${r.param.toLowerCase()}: <strong>${r.wartosc}</strong>`).join(', ');
-        msg = `Odczytałem <strong>${sourceLabel}</strong> i wyciągnąłem ${parsed.foundCount} parametrów — ${found}. Przechodzimy dalej: MPZP i kosztorys.`;
+      // Nie rozpoznano parametrów -> formularz do ręcznego wpisania (do porównania z MPZP)
+      if (!parsed || !parsed.foundCount) {
+        const note = parsed
+          ? `Wczytałem <strong>${sourceLabel}</strong>, ale nie rozpoznałem w nim typowych parametrów. Wpisz najważniejsze z nich ręcznie — wykorzystam je później do porównania z MPZP. Pola możesz zostawić puste.`
+          : `${errMsg} Wpisz najważniejsze parametry projektu ręcznie — przydadzą się do porównania z MPZP. Pola możesz zostawić puste.`;
+        showProjektManualForm(step, note);
+        return;
       }
-      assistantSay(msg, () => advance(step));
+
+      // Rozpoznano parametry
+      state.projekt = { source, parsed, sourceLabel };
+      if (parsed.powUzytkowa) state.answers.powUzytkowa = parsed.powUzytkowa;
+      const found = parsed.rows.filter(r => r.found).map(r => `${r.param.toLowerCase()}: <strong>${r.wartosc}</strong>`).join(', ');
+      assistantSay(`Odczytałem <strong>${sourceLabel}</strong> i wyciągnąłem ${parsed.foundCount} parametrów — ${found}. Przechodzimy dalej: MPZP i kosztorys.`, () => advance(step));
+    });
+  });
+}
+
+/* Formularz ręcznego wpisania parametrów projektu (gdy PDF ich nie zawiera).
+   Dane trafiają do state.projekt w tej samej strukturze co odczyt z pliku. */
+function showProjektManualForm(step, introHtml) {
+  assistantSay(introHtml, () => {
+    const block = addActionBlock();
+    block.innerHTML = `
+      <div class="widget-label">✏️ Wpisz parametry projektu ręcznie</div>
+      <div class="param-grid">
+        <div class="param-field">
+          <label for="pm-pu">Powierzchnia użytkowa</label>
+          <div class="param-input-wrap"><input class="param-input" id="pm-pu" type="text" inputmode="numeric" placeholder="np. 140"><span class="pi-unit">m²</span></div>
+        </div>
+        <div class="param-field">
+          <label for="pm-pz">Powierzchnia zabudowy</label>
+          <div class="param-input-wrap"><input class="param-input" id="pm-pz" type="text" inputmode="numeric" placeholder="np. 98"><span class="pi-unit">m²</span></div>
+        </div>
+        <div class="param-field">
+          <label for="pm-kond">Liczba kondygnacji</label>
+          <div class="param-input-wrap"><input class="param-input" id="pm-kond" type="text" inputmode="numeric" placeholder="np. 2"></div>
+        </div>
+        <div class="param-field">
+          <label for="pm-wys">Wysokość budynku</label>
+          <div class="param-input-wrap"><input class="param-input" id="pm-wys" type="text" inputmode="numeric" placeholder="np. 8,4"><span class="pi-unit">m</span></div>
+        </div>
+        <div class="param-field">
+          <label for="pm-kat">Kąt nachylenia dachu</label>
+          <div class="param-input-wrap"><input class="param-input" id="pm-kat" type="text" inputmode="numeric" placeholder="np. 40"><span class="pi-unit">°</span></div>
+        </div>
+      </div>
+      <div class="widget-actions">
+        <button class="btn btn-primary" id="pm-save">Zapisz parametry →</button>
+      </div>`;
+    scrollChat();
+    $('#pm-pu').focus();
+
+    const dec = v => { const n = parseFloat(String(v).replace(/\s/g, '').replace(',', '.')); return isFinite(n) ? n : 0; };
+    const fmtDec = n => Number.isInteger(n) ? String(n) : String(n).replace('.', ',');
+
+    $('#pm-save').addEventListener('click', () => {
+      const pu = dec($('#pm-pu').value), pz = dec($('#pm-pz').value);
+      const kond = Math.round(dec($('#pm-kond').value)), wys = dec($('#pm-wys').value), kat = Math.round(dec($('#pm-kat').value));
+      const rows = [];
+      if (pu)   rows.push({ param: 'Powierzchnia użytkowa', wartosc: fmtDec(pu) + ' m²', found: true });
+      if (pz)   rows.push({ param: 'Powierzchnia zabudowy', wartosc: fmtDec(pz) + ' m²', found: true });
+      if (kond) rows.push({ param: 'Liczba kondygnacji', wartosc: 'do ' + kond, found: true });
+      if (wys)  rows.push({ param: 'Wysokość budynku', wartosc: fmtDec(wys) + ' m', found: true });
+      if (kat)  rows.push({ param: 'Geometria dachu', wartosc: 'kąt ' + kat + '°', found: true });
+
+      const parsed = {
+        rows, manual: true, foundCount: rows.length,
+        powUzytkowa: pu ? Math.round(pu) : null,
+        powZabudowy: pz ? Math.round(pz) : null,
+        kondygnacje: kond || null,
+        wysokosc: wys || null,
+        katDachu: kat || null,
+      };
+      state.projekt = { source: 'manual', parsed, sourceLabel: 'ręcznie wpisanych danych' };
+      if (parsed.powUzytkowa) state.answers.powUzytkowa = parsed.powUzytkowa;
+
+      block.remove();
+      addBubble('user', rows.length ? `Wpisałem parametry projektu: ${rows.map(r => r.wartosc).join(', ')}.` : 'Pominąłem ręczne wpisywanie parametrów.');
+      assistantSay(rows.length
+        ? `Zapisałem ${rows.length} parametrów projektu — wykorzystam je do porównania z MPZP na kolejnym etapie.`
+        : 'Ok, pomijamy parametry — doprecyzujesz je później w kosztorysie i briefie.', () => advance(step));
     });
   });
 }

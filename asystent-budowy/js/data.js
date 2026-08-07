@@ -443,6 +443,12 @@ function parseProjektText(raw) {
   const kub = grab(/kubatur\S*[^.\d]{0,15}?(\d{2,5})\s*m\s*[³3]/i);
   add('Kubatura', kub ? kub + ' m³' : null);
 
+  // Liczbowe pola do późniejszego porównania z MPZP
+  out.powZabudowy = pz ? Math.round(parseFloat(pz.replace(',', '.'))) : null;
+  out.kondygnacje = kond ? parseInt(kond, 10) : null;
+  out.wysokosc = wys ? parseFloat(wys.replace(',', '.')) : null;
+  out.katDachu = ang ? parseInt(ang, 10) : null;
+
   out.foundCount = rows.filter(r => r.found).length;
   return out;
 }

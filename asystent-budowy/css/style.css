@@ -393,6 +393,13 @@ html, body {
 .file-chip .fc-name { font-weight: 600; color: var(--ink); font-size: 13.5px; }
 .file-chip .fc-size { color: var(--ink-faint); font-size: 12px; margin-left: auto; }
 .file-chip .fc-ok { color: var(--ok); font-weight: 700; }
+.file-chip .fc-remove {
+  background: transparent; border: none; cursor: pointer;
+  color: var(--ink-faint); font-size: 14px; line-height: 1;
+  padding: 3px 6px; border-radius: 6px;
+  transition: color .15s ease, background .15s ease;
+}
+.file-chip .fc-remove:hover { color: var(--bad); background: var(--bad-bg); }
 
 /* Tabelki w czacie */
 .chat-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 4px; }

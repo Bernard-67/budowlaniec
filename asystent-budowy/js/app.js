@@ -24,6 +24,7 @@ function freshState() {
     kosztStandard: null,   // wybrany standard + koszt (etap „tylko pomysł”)
     dzialka: null,         // szacunek działki: { area, pricePerM2, cost }
     mpzp: null,            // odczyt MPZP: { source, parsed }
+    projekt: null,         // odczyt projektu: { source, parsed, sourceLabel }
   };
 }
 
@@ -90,8 +91,8 @@ function runStep() {
     case 'budzet_input':   return renderBudzetInput(step);
     case 'budzet_ocena':   return renderBudzetOcena(step);
     case 'mpzp_upload':    return renderMpzpUpload(step);
+    case 'projekt_upload': return renderProjektUpload(step);
     case 'mpzp':           return renderMpzpWidget(step);
-    case 'upload':         return renderUploadWidget(step);
     case 'kosztorys':      return renderKosztorysWidget(step);
     case 'oferty':         return renderOffersWidget(step);
     case 'brief':          return renderBrief(step);
@@ -807,6 +808,120 @@ function fillMpzpKeyDataCard(parsed, sourceLabel) {
     ${derivedHtml}`;
 }
 
+/* ---------------- Krok: Upload projektu (PDF) + odczyt parametrów ---------------- */
+function renderProjektUpload(step) {
+  assistantSay(md(step.intro), () => {
+    const block = addActionBlock();
+    block.innerHTML = `
+      <div class="widget-label">📐 Wgraj projekt budowlany (PDF)</div>
+      <div style="font-size:13px;color:var(--ink-soft);margin-bottom:6px">Akceptowany format:</div>
+      <div class="format-list">${step.formats.map(f => `<span class="format-chip">${f}</span>`).join('')}</div>
+      <input type="file" id="prj-file" class="hidden-file" accept="${formatsToAccept(step.formats)}" multiple>
+      <div class="widget-actions">
+        <button class="btn btn-primary" id="prj-pick">📎 Załącz plik z dysku</button>
+        <button class="btn btn-secondary" id="prj-demo">Użyj przykładowego projektu</button>
+      </div>
+      <div class="mpzp-source-note" id="prj-source-note" style="display:none"></div>
+      <div class="param-error" id="prj-file-error" style="display:none"></div>
+      <ul class="file-list" id="prj-file-list"></ul>
+      <div class="widget-actions" id="prj-analyze-row" style="display:none">
+        <button class="btn btn-primary" id="prj-analyze">Odczytaj projekt →</button>
+      </div>`;
+    scrollChat();
+
+    let source = null;
+    const attached = [];
+    const listEl = $('#prj-file-list');
+    const acceptedExt = formatsToExt(step.formats);
+
+    const addChip = (name, size) => {
+      const rec = { name, size };
+      attached.push(rec);
+      const li = document.createElement('li');
+      li.className = 'file-chip';
+      li.innerHTML = `<span class="fc-ico">${fileIcon(name)}</span>
+        <span class="fc-name">${name}</span>
+        <span class="fc-size">${size}</span>
+        <span class="fc-ok">✓</span>`;
+      listEl.appendChild(li);
+      $('#prj-analyze-row').style.display = 'flex';
+      scrollChat();
+      return rec;
+    };
+
+    const lockSource = (src, noteHtml) => {
+      source = src;
+      $('#prj-demo').disabled = (src === 'real');
+      $('#prj-pick').disabled = (src === 'demo');
+      $('#prj-file').disabled = (src === 'demo');
+      const note = $('#prj-source-note');
+      note.innerHTML = noteHtml;
+      note.style.display = 'block';
+    };
+
+    $('#prj-pick').addEventListener('click', () => $('#prj-file').click());
+    $('#prj-file').addEventListener('change', e => {
+      const err = $('#prj-file-error');
+      err.style.display = 'none';
+      const rejected = [];
+      [...e.target.files].forEach(file => {
+        const ext = (file.name.split('.').pop() || '').toLowerCase();
+        if (acceptedExt.length && !acceptedExt.includes(ext)) { rejected.push(file.name); return; }
+        addChip(file.name, formatFileSize(file.size)).file = file;
+      });
+      if (rejected.length) {
+        err.textContent = `Pominięto pliki w niewspieranym formacie (tylko PDF): ${rejected.join(', ')}.`;
+        err.style.display = 'block';
+      }
+      if (attached.length) lockSource('real', '📎 Źródło: <strong>Twój plik</strong> — odczyt realny. Przykładowy projekt jest teraz zablokowany.');
+      e.target.value = '';
+    });
+
+    $('#prj-demo').addEventListener('click', () => {
+      lockSource('demo', '📄 Źródło: <strong>przykładowy projekt</strong>. Załączanie własnych plików jest teraz zablokowane.');
+      step.demoFiles.forEach((f, i) => setTimeout(() => addChip(f.name, f.size), i * 220));
+    });
+
+    $('#prj-analyze').addEventListener('click', async () => {
+      if (!attached.length) return;
+      block.remove();
+      addBubble('user', `Wgrałem projekt (${source === 'demo' ? 'przykład' : 'plik z dysku'}): ${attached.map(f => f.name).join(', ')}.`);
+
+      const typing = showTyping();
+      let parsed = null, sourceLabel = '', errMsg = null;
+      try {
+        if (source === 'demo') {
+          parsed = parseProjektText(SAMPLE_PROJEKT);
+          sourceLabel = 'przykładowego projektu';
+        } else {
+          const pdf = attached[0];
+          const text = await extractPdfText(pdf.file);
+          parsed = parseProjektText(text);
+          sourceLabel = `Twojego pliku „${pdf.name}”`;
+        }
+      } catch (err) {
+        errMsg = 'Nie udało się odczytać pliku (' + err.message + ').';
+      }
+      typing.remove();
+
+      // Projekt jest wczytany niezależnie od liczby odczytanych parametrów
+      state.projekt = parsed ? { source, parsed, sourceLabel } : null;
+      if (parsed && parsed.powUzytkowa) state.answers.powUzytkowa = parsed.powUzytkowa;
+
+      let msg;
+      if (!parsed) {
+        msg = `${errMsg} Przyjmuję projekt bez odczytu parametrów — doprecyzujesz je w kosztorysie i briefie.`;
+      } else if (!parsed.foundCount) {
+        msg = `Wczytałem <strong>${sourceLabel}</strong>, ale nie rozpoznałem w nim typowych parametrów (metraż, kondygnacje). To nie problem — przechodzimy dalej, a szczegóły doprecyzujesz w kosztorysie i briefie.`;
+      } else {
+        const found = parsed.rows.filter(r => r.found).map(r => `${r.param.toLowerCase()}: <strong>${r.wartosc}</strong>`).join(', ');
+        msg = `Odczytałem <strong>${sourceLabel}</strong> i wyciągnąłem ${parsed.foundCount} parametrów — ${found}. Przechodzimy dalej: MPZP i kosztorys.`;
+      }
+      assistantSay(msg, () => advance(step));
+    });
+  });
+}
+
 /* ---------------- Krok: MPZP ---------------- */
 function renderMpzpWidget(step) {
   const block = addActionBlock();
@@ -844,48 +959,6 @@ function fillMpzpCard(result) {
           <td class="st-val"><span class="status-pill status-${r.status}">${statusLabel[r.status]}</span></td>
         </tr>`).join('')}
     </table>`;
-}
-
-/* ---------------- Krok: Upload (wiele plików + formaty) ---------------- */
-function renderUploadWidget(step) {
-  const block = addActionBlock();
-  block.innerHTML = `
-    <div class="widget-label">📎 Wgraj pliki projektu i inwestycji</div>
-    <div style="font-size:13px;color:var(--ink-soft);margin-bottom:6px">Akceptowane formaty:</div>
-    <div class="format-list">${step.formats.map(f => `<span class="format-chip">${f}</span>`).join('')}</div>
-    <div class="widget-actions">
-      <button class="btn btn-secondary" id="up-demo">Wgraj przykładowy zestaw plików</button>
-    </div>
-    <ul class="file-list" id="file-list"></ul>
-    <div class="widget-actions" id="up-confirm-row" style="display:none">
-      <button class="btn btn-primary" id="up-confirm">Gotowe, analizuj →</button>
-    </div>`;
-  scrollChat();
-
-  $('#up-demo').addEventListener('click', () => {
-    const list = $('#file-list');
-    list.innerHTML = '';
-    step.demoFiles.forEach((f, i) => {
-      setTimeout(() => {
-        const li = document.createElement('li');
-        li.className = 'file-chip';
-        li.innerHTML = `<span class="fc-ico">${fileIcon(f.name)}</span>
-          <span class="fc-name">${f.name}</span>
-          <span class="fc-size">${f.size}</span>
-          <span class="fc-ok">✓</span>`;
-        list.appendChild(li);
-        scrollChat();
-      }, i * 260);
-    });
-    $('#up-demo').disabled = true;
-    setTimeout(() => { $('#up-confirm-row').style.display = 'flex'; scrollChat(); }, step.demoFiles.length * 260 + 120);
-  });
-
-  $('#up-confirm').addEventListener('click', () => {
-    block.remove();
-    addBubble('user', `Wgrałem ${step.demoFiles.length} pliki: ${step.demoFiles.map(f => f.name).join(', ')}.`);
-    assistantSay('Dziękuję — przyjąłem pliki. W prototypie nie odczytuję ich zawartości naprawdę, ale w docelowej aplikacji wyciągnę z nich parametry projektu.', () => advance(step));
-  });
 }
 
 /* ---------------- Krok: Kosztorys ---------------- */

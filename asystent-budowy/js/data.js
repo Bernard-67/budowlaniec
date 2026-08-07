@@ -220,26 +220,13 @@ const STAGES = {
         text: 'Masz gotowy projekt — to znaczy, że możemy przejść przez pełną ścieżkę: sprawdzenie zgodności z MPZP, kosztorys z listą materiałów, a na końcu porównanie ofert wykonawców i kolejność prac. Zacznijmy od wczytania Twoich dokumentów.',
       },
       {
-        type: 'upload',
-        text: 'Wgraj pliki projektu i wszystko, co masz na temat inwestycji. Nie parsuję ich naprawdę — w prototypie pokazuję, że asystent przyjmuje wiele plików w różnych formatach.',
-        formats: ['PDF', 'DWG', 'XLS', 'DOC', 'PPT', 'TXT', 'PNG', 'JPG'],
+        type: 'projekt_upload',
+        intro: 'Wgraj **projekt budowlany w PDF** (może być opis techniczny albo zestawienie powierzchni) — odczytam z niego kluczowe parametry: metraż, liczbę kondygnacji i dach. Przyjmuję wyłącznie PDF z warstwą tekstową. Nie masz pliku pod ręką? Użyj przykładowego projektu.',
+        formats: ['PDF'],
         demoFiles: [
           { name: 'projekt_domu_140m2.pdf', size: '4,2 MB' },
-          { name: 'kosztorys_wstepny.xls',  size: '86 KB' },
-          { name: 'dzialka_zdjecie.jpg',    size: '2,1 MB' },
         ],
         effects: { checklist: ['projekt', 'preferencje'], progress: 'projekt' },
-      },
-      {
-        type: 'choice',
-        key: 'potwierdzenie_metrazu',
-        question: 'Z projektu odczytałem: dom parterowy z poddaszem, ok. 140 m² powierzchni użytkowej, dach dwuspadowy. Zgadza się?',
-        allowFree: true,
-        options: [
-          { label: 'Tak, zgadza się', value: 'tak', reply: 'Świetnie, przyjmuję te parametry do dalszych analiz.' },
-          { label: 'Prawie — poprawię szczegóły', value: 'popraw', reply: 'Jasne, w prototypie przyjmę wartości bazowe, a Ty i tak doprecyzujesz je w kosztorysie i briefie.' },
-        ],
-        effects: { checklist: [], progress: 'projekt' },
       },
       {
         type: 'dzialka_params',
@@ -413,6 +400,51 @@ function parseMpzpText(raw) {
 
   const foundCount = rows.filter(r => r.found).length;
   return { rows, percent, foundCount };
+}
+
+/* Przykładowy opis projektu (parsowany, gdy użytkownik kliknie „Użyj przykładowego projektu”) */
+const SAMPLE_PROJEKT = `PROJEKT BUDOWLANY — DOM JEDNORODZINNY
+Opis techniczny i zestawienie powierzchni.
+Charakterystyka budynku:
+Budynek mieszkalny jednorodzinny, wolnostojący, parterowy z poddaszem użytkowym.
+Liczba kondygnacji nadziemnych: 2 (parter i poddasze użytkowe).
+Powierzchnia zabudowy: 98,5 m².
+Powierzchnia użytkowa: 140,2 m².
+Kubatura: 720 m³.
+Dach dwuspadowy o kącie nachylenia 40°.
+Wysokość budynku: 8,4 m.`;
+
+/* Parsuje tekst projektu (z pdf.js albo SAMPLE_PROJEKT) do kluczowych parametrów.
+   Zwraca wiersze z flagą `found` oraz odczytaną powierzchnię użytkową (liczba). */
+function parseProjektText(raw) {
+  const t = String(raw || '').replace(/[Ŝŝ]/g, 'ż').replace(/\s+/g, ' ');
+  const grab = re => { const m = t.match(re); return m ? m[1] : null; };
+  const rows = [];
+  const add = (param, wartosc) => rows.push({ param, wartosc: wartosc || 'nie odczytano z pliku', found: !!wartosc });
+  const out = { rows, powUzytkowa: null };
+
+  const pu = grab(/powierzchni\S*\s+u[żz]ytkow\S*[^.\d]{0,20}?(\d{1,4}(?:[.,]\d{1,2})?)\s*m/i);
+  if (pu) out.powUzytkowa = Math.round(parseFloat(pu.replace(',', '.')));
+  add('Powierzchnia użytkowa', pu ? pu.replace('.', ',') + ' m²' : null);
+
+  const pz = grab(/powierzchni\S*\s+zabudow\S*[^.\d]{0,20}?(\d{1,4}(?:[.,]\d{1,2})?)\s*m/i);
+  add('Powierzchnia zabudowy', pz ? pz.replace('.', ',') + ' m²' : null);
+
+  const kond = grab(/(\d+)\s+kondygnacj/i) || grab(/kondygnacj\S*[^.\d]{0,20}(\d+)/i);
+  add('Liczba kondygnacji', kond ? 'do ' + kond + (/poddasz/i.test(t) ? ' (z poddaszem)' : '') : (/parterow/i.test(t) ? 'parterowy' : null));
+
+  const shape = /dwuspadow/i.test(t) ? 'dwuspadowy' : /wielospadow/i.test(t) ? 'wielospadowy' : /p[łl]ask/i.test(t) ? 'płaski' : null;
+  const ang = grab(/(\d{2})\s*(?:°|stopni)/);
+  add('Geometria dachu', shape ? shape + (ang ? ', ' + ang + '°' : '') : null);
+
+  const wys = grab(/wysoko\S*\s+(?:budynku|zabudowy)[^.\d]{0,20}?(\d{1,2}(?:[.,]\d)?)\s*m(?!\s*[²2³])/i);
+  add('Wysokość budynku', wys ? wys.replace('.', ',') + ' m' : null);
+
+  const kub = grab(/kubatur\S*[^.\d]{0,15}?(\d{2,5})\s*m\s*[³3]/i);
+  add('Kubatura', kub ? kub + ' m³' : null);
+
+  out.foundCount = rows.filter(r => r.found).length;
+  return out;
 }
 
 /* Kosztorys — pozycje z uśrednionymi kwotami; edytowalne w UI */
@@ -623,7 +655,9 @@ function generateBrief(state) {
     id: 'zakres',
     title: '3. Zakres i parametry inwestycji',
     text: state.stage === 'gotowy_projekt'
-      ? 'Dom parterowy z poddaszem użytkowym, ok. 140 m² powierzchni użytkowej, dach dwuspadowy (nachylenie 40°), wysokość 8,4 m. Parametry odczytane z wgranego projektu budowlanego.'
+      ? (state.projekt && state.projekt.parsed && state.projekt.parsed.foundCount
+          ? `Parametry odczytane z projektu (${state.projekt.sourceLabel}): ` + state.projekt.parsed.rows.filter(r => r.found).map(r => `${r.param.toLowerCase()}: ${r.wartosc}`).join('; ') + '.'
+          : 'Dom jednorodzinny — parametry wg wgranego projektu budowlanego.')
       : (a.powUzytkowa
           ? `Preferowany typ: ${typDomu}. Zakładana powierzchnia użytkowa: ${formatNum(a.powUzytkowa)} m²${a.powGarazu > 0 ? `, garaż ${formatNum(a.powGarazu)} m²` : ' (bez garażu)'}.${state.dzialka ? ` Działka: ${formatNum(state.dzialka.area)} m²${state.dzialka.owned ? ' (posiadana)' : ''}.` : ''} Pozostałe parametry (liczba kondygnacji, dach) do ustalenia na etapie projektu budowlanego.`
           : `Preferowany typ: ${typDomu}. Szczegółowe parametry (metraż, liczba kondygnacji, dach) zostaną ustalone na etapie projektu budowlanego.`),

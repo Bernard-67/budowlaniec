@@ -360,6 +360,7 @@ function updateInvestmentCard() {
    w przeciwnym razie    -> szacunek przyszłego zakupu (dom + działka). */
 function renderDzialkaParams(step) {
   const owned = !!step.owned;
+  const askPrice = !step.hidePrice;   // step.hidePrice === true -> nie pytamy o cenę za m²
   assistantSay(md(step.intro), () => {
     const block = addActionBlock();
     block.innerHTML = `
@@ -372,13 +373,13 @@ function renderDzialkaParams(step) {
             <span class="pi-unit">m²</span>
           </div>
         </div>
-        <div class="param-field">
+        ${askPrice ? `<div class="param-field">
           <label for="dz-price">Cena za m² <span class="pf-hint">(${owned ? 'opcjonalnie' : 'wymagane'})</span></label>
           <div class="param-input-wrap">
             <input class="param-input" id="dz-price" type="text" inputmode="numeric" placeholder="np. 250">
             <span class="pi-unit">zł</span>
           </div>
-        </div>
+        </div>` : ''}
       </div>
       <div class="param-error" id="dz-error" style="display:none"></div>
       <div class="widget-actions">
@@ -401,7 +402,7 @@ function renderDzialkaParams(step) {
 
     $('#dz-next').addEventListener('click', () => {
       const area = parseNum($('#dz-area').value);
-      const price = parseNum($('#dz-price').value);
+      const price = askPrice ? parseNum($('#dz-price').value) : 0;
       if (!area || area < 100) { showErr('Podaj powierzchnię działki (min. 100 m²).'); $('#dz-area').focus(); return; }
       if (!owned && (!price || price < 10)) { showErr('Podaj cenę za m² działki.'); $('#dz-price').focus(); return; }
       const cost = price ? area * price : 0;

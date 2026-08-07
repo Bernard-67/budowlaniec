@@ -172,7 +172,8 @@ const STAGES = {
       {
         type: 'dzialka_params',
         owned: true,
-        intro: 'Podaj **powierzchnię swojej działki** — będzie potrzebna, żeby przeliczyć limity z MPZP (ile metrów możesz zabudować, ile zostawić na zieleń). Cenę za m² możesz podać opcjonalnie.',
+        hidePrice: true,
+        intro: 'Podaj **powierzchnię swojej działki** — będzie potrzebna, żeby przeliczyć limity z MPZP (ile metrów możesz zabudować, ile zostawić na zieleń).',
         effects: { checklist: ['dzialka'], progress: 'dzialka' },
       },
       {
@@ -243,7 +244,8 @@ const STAGES = {
       {
         type: 'dzialka_params',
         owned: true,
-        intro: 'Podaj **powierzchnię działki**, na której ma stanąć projekt — przeliczę na nią limity z MPZP (ile możesz zabudować, ile zostawić na zieleń). Cenę za m² możesz podać opcjonalnie.',
+        hidePrice: true,
+        intro: 'Podaj **powierzchnię działki**, na której ma stanąć projekt — przeliczę na nią limity z MPZP (ile możesz zabudować, ile zostawić na zieleń).',
         effects: { checklist: ['dzialka'], progress: 'projekt' },
       },
       {

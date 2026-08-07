@@ -1,0 +1,5 @@
+# Konfiguracja Netlify — aplikacja jest statyczna i leży w podfolderze asystent-budowy/.
+# Nie ma kroku budowania (czysty HTML/CSS/JS + vendor/pdf.js).
+[build]
+  publish = "asystent-budowy"
+  command = ""

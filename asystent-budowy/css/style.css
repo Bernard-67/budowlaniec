@@ -247,12 +247,16 @@ html, body {
 }
 .chat-window {
   flex: 1 1 auto;
+  min-height: 0;            /* pozwala oknu kurczyć się i przewijać zawartość (fix flexbox) */
   overflow-y: auto;
   padding: 26px 28px;
   display: flex; flex-direction: column;
   gap: 16px;
   scroll-behavior: smooth;
 }
+/* dzieci czatu nie mogą być ściskane — inaczej wysoka treść (np. brief) wylewa
+   się poza swój box i przycisk na dole staje się nieosiągalny przy przewijaniu */
+.chat-window > * { flex-shrink: 0; }
 
 /* Bąbelki */
 .bubble { max-width: 82%; display: flex; gap: 10px; align-items: flex-start; }

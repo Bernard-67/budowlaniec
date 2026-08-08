@@ -289,13 +289,13 @@ function renderDomParams(step) {
     $('#params-next').addEventListener('click', () => {
       const pu = parseNum(puInput.value);
       const pg = parseNum($('#pg-input').value);
-      if (!pu || pu < 20) {
-        const err = $('#param-error');
-        err.textContent = 'Podaj powierzchnię użytkową (min. 20 m²).';
-        err.style.display = 'block';
-        puInput.focus();
-        return;
-      }
+      const err = $('#param-error');
+      const showErr = (msg, el) => { err.textContent = msg; err.style.display = 'block'; (el || puInput).focus(); };
+      const puErr = rangeError(pu, LIMITS.powUzytkowa);
+      if (puErr) { showErr(puErr); return; }
+      // garaż jest opcjonalny (0 = bez garażu), ale gdy podany, nie może być skrajny
+      if (pg > LIMITS.powGarazu.max) { showErr(rangeError(pg, LIMITS.powGarazu), $('#pg-input')); return; }
+      err.style.display = 'none';
       state.answers.powUzytkowa = pu;
       state.answers.powGarazu = pg;
       block.remove();
@@ -340,15 +340,23 @@ function renderKosztStandard(step) {
 
     // Edycja stawek → aktualizacja stanu i przeliczenie sumy danego wariantu na żywo
     $$('.rate-input', block).forEach(input => {
-      input.addEventListener('input', () => {
+      const lim = input.dataset.rate === 'dom' ? LIMITS.rateDom : LIMITS.rateGaraz;
+      const applyRate = val => {
         const card = input.closest('.std-card');
         const key = card.dataset.key;
-        const val = parseNum(input.value);
         if (!state.buildRates[key]) state.buildRates[key] = {};
         if (input.dataset.rate === 'dom') state.buildRates[key].rateDom = val;
         else state.buildRates[key].rateGaraz = val;
         const opt = computeCostByStandard(pu, pg, state.buildRates).find(o => o.key === key);
         $('[data-total]', card).textContent = formatPln(opt.total);
+      };
+      // przeliczanie na żywo (bez ograniczania w trakcie pisania)
+      input.addEventListener('input', () => applyRate(parseNum(input.value)));
+      // po opuszczeniu pola: klamra do rozsądnego zakresu, żeby nie było wartości skrajnych
+      input.addEventListener('change', () => {
+        const clamped = clampNum(parseNum(input.value) || lim.min, lim);
+        input.value = clamped;
+        applyRate(clamped);
       });
     });
 
@@ -440,8 +448,14 @@ function renderDzialkaParams(step) {
     $('#dz-next').addEventListener('click', () => {
       const area = parseNum($('#dz-area').value);
       const price = askPrice ? parseNum($('#dz-price').value) : 0;
-      if (!area || area < 100) { showErr('Podaj powierzchnię działki (min. 100 m²).'); $('#dz-area').focus(); return; }
-      if (!owned && (!price || price < 10)) { showErr('Podaj cenę za m² działki.'); $('#dz-price').focus(); return; }
+      const areaErr = rangeError(area, LIMITS.dzialkaArea);
+      if (areaErr) { showErr(areaErr); $('#dz-area').focus(); return; }
+      if (!owned) {
+        const priceErr = rangeError(price, LIMITS.dzialkaCena);
+        if (priceErr) { showErr(priceErr); $('#dz-price').focus(); return; }
+      } else if (price && price > LIMITS.dzialkaCena.max) {   // działka posiadana: cena opcjonalna, ale bez skrajności
+        showErr(rangeError(price, LIMITS.dzialkaCena)); $('#dz-price').focus(); return;
+      }
       const cost = price ? area * price : 0;
       state.dzialka = { area, pricePerM2: price || null, cost, owned };
       block.remove();
@@ -491,9 +505,10 @@ function renderBudzetInput(step) {
 
     $('#budzet-ok').addEventListener('click', () => {
       const amount = parseNum(input.value);
-      if (!amount || amount < 50000) {
+      const budErr = rangeError(amount, LIMITS.budzet);
+      if (budErr) {
         const e = $('#budzet-error');
-        e.textContent = 'Podaj realny budżet (min. 50 000 zł).';
+        e.textContent = budErr;
         e.style.display = 'block';
         input.focus();
         return;
@@ -1066,6 +1081,7 @@ function showProjektManualForm(step, introHtml) {
           <div class="param-input-wrap"><input class="param-input" id="pm-kat" type="text" inputmode="numeric" placeholder="np. 40"><span class="pi-unit">°</span></div>
         </div>
       </div>
+      <div class="param-error" id="pm-error" style="display:none"></div>
       <div class="widget-actions">
         <button class="btn btn-primary" id="pm-save">Zapisz parametry →</button>
       </div>`;
@@ -1078,6 +1094,18 @@ function showProjektManualForm(step, introHtml) {
     $('#pm-save').addEventListener('click', () => {
       const pu = dec($('#pm-pu').value), pz = dec($('#pm-pz').value);
       const kond = Math.round(dec($('#pm-kond').value)), wys = dec($('#pm-wys').value), kat = Math.round(dec($('#pm-kat').value));
+      // Walidacja zakresów (tylko pól faktycznie wypełnionych)
+      const pmErr = $('#pm-error');
+      const checks = [[pu, LIMITS.prjPu], [pz, LIMITS.prjPz], [kond, LIMITS.prjKond], [wys, LIMITS.prjWys], [kat, LIMITS.prjKat]];
+      for (const [v, lim] of checks) {
+        if (v && (v < lim.min || v > lim.max)) {
+          const u = lim.unit ? ' ' + lim.unit : '';
+          pmErr.textContent = `${lim.what} ${fmtDec(v)}${u} wygląda na pomyłkę — podaj ${formatNum(lim.min)}–${formatNum(lim.max)}${u}.`;
+          pmErr.style.display = 'block';
+          return;
+        }
+      }
+      pmErr.style.display = 'none';
       const rows = [];
       if (pu)   rows.push({ param: 'Powierzchnia użytkowa', wartosc: fmtDec(pu) + ' m²', found: true });
       if (pz)   rows.push({ param: 'Powierzchnia zabudowy', wartosc: fmtDec(pz) + ' m²', found: true });
@@ -1201,7 +1229,7 @@ function renderKosztorysWidget(step) {
     });
     $$('.kwota-input', tbody).forEach(inp => {
       inp.addEventListener('input', () => {
-        const n = parseNum(inp.value);
+        const n = Math.min(parseNum(inp.value), LIMITS.kwota.max);   // klamra na skrajne kwoty
         inp.value = n ? formatNum(n) : '';   // formatowanie na żywo (spacja co tysiąc)
         items[+inp.dataset.idx].kwota = n;
         recompute();
@@ -1441,7 +1469,7 @@ function renderPozRows(card, rows) {
       <td class="num"><input class="kwota-input poz-kwota" type="text" value="${r.kwota ? formatNum(r.kwota) : ''}"> zł</td>
       <td class="kt-actions"><button class="kt-del poz-del" data-idx="${idx}" type="button" title="Usuń pozycję" aria-label="Usuń pozycję">✕</button></td>
     </tr>`).join('');
-  $$('.poz-kwota', tbody).forEach(inp => inp.addEventListener('input', () => { const n = parseNum(inp.value); inp.value = n ? formatNum(n) : ''; }));
+  $$('.poz-kwota', tbody).forEach(inp => inp.addEventListener('input', () => { const n = Math.min(parseNum(inp.value), LIMITS.kwota.max); inp.value = n ? formatNum(n) : ''; }));
   $$('.poz-del', tbody).forEach(btn => btn.addEventListener('click', () => {
     const cur = readPozRows(card);
     cur.splice(+btn.dataset.idx, 1);
@@ -1748,7 +1776,41 @@ function doRestart() {
    UTILSY LICZBOWE
    ============================================================= */
 function formatNum(n) { return new Intl.NumberFormat('pl-PL').format(Math.round(n)); }
-function parseNum(str) { return parseInt(String(str).replace(/[^\d]/g, ''), 10) || 0; }
+// Parsuje liczbę: spacja = separator tysięcy, przecinek = separator dziesiętny.
+// Wartości ujemne i nieliczby -> 0. Zwraca zaokrągloną liczbę całkowitą.
+function parseNum(str) {
+  let s = String(str).replace(/\s/g, '').replace(/[^\d.,-]/g, '');
+  if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.'); // "120,5" -> 120.5, "1.200" tylko gdy bez przecinka
+  const n = parseFloat(s);
+  return isFinite(n) && n > 0 ? Math.round(n) : 0;
+}
+
+/* Rozsądne zakresy wartości — zabezpieczenie przed skrajnymi/pomyłkowymi danymi. */
+const LIMITS = {
+  powUzytkowa: { min: 20,    max: 1000,       unit: 'm²',    what: 'Powierzchnia użytkowa' },
+  powGarazu:   { min: 0,     max: 200,        unit: 'm²',    what: 'Powierzchnia garażu' },
+  dzialkaArea: { min: 100,   max: 50000,      unit: 'm²',    what: 'Powierzchnia działki' },
+  dzialkaCena: { min: 10,    max: 20000,      unit: 'zł/m²', what: 'Cena za m² działki' },
+  budzet:      { min: 50000, max: 100000000,  unit: 'zł',    what: 'Budżet' },
+  rateDom:     { min: 500,   max: 40000 },
+  rateGaraz:   { min: 300,   max: 30000 },
+  prjPu:  { min: 20, max: 1000, unit: 'm²', what: 'Powierzchnia użytkowa' },
+  prjPz:  { min: 10, max: 1000, unit: 'm²', what: 'Powierzchnia zabudowy' },
+  prjKond:{ min: 1,  max: 5,    unit: '',   what: 'Liczba kondygnacji' },
+  prjWys: { min: 2,  max: 25,   unit: 'm',  what: 'Wysokość budynku' },
+  prjKat: { min: 0,  max: 89,   unit: '°',  what: 'Kąt nachylenia dachu' },
+  kwota:  { min: 0,  max: 50000000 },
+};
+
+// Zwraca komunikat błędu, jeśli wartość poza zakresem; null gdy OK.
+function rangeError(val, lim) {
+  const u = lim.unit ? ' ' + lim.unit : '';
+  if (!val || val < lim.min) return `${lim.what} — podaj wartość min. ${formatNum(lim.min)}${u}.`;
+  if (val > lim.max) return `${lim.what} ${formatNum(val)}${u} wygląda na pomyłkę — podaj maks. ${formatNum(lim.max)}${u}.`;
+  return null;
+}
+// Ogranicza wartość do zakresu [min, max].
+function clampNum(val, lim) { return Math.min(Math.max(val, lim.min), lim.max); }
 
 /* =============================================================
    BOOTSTRAP

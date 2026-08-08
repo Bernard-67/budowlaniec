@@ -35,6 +35,7 @@ function freshState() {
     buildRates: defaultBuildRates(),  // edytowalne stawki zł/m² per standard
     dzialka: null,         // szacunek działki: { area, pricePerM2, cost }
     mpzp: null,            // odczyt MPZP: { source, parsed }
+    mpzpComparison: null,  // porównanie projektu z MPZP (etap „gotowy projekt”)
     projekt: null,         // odczyt projektu: { source, parsed, sourceLabel }
     oferty: null,          // porównanie ofert: { source, list, wybrana }
   };
@@ -819,7 +820,12 @@ function renderMpzpUpload(step) {
       }
 
       state.mpzp = { source, parsed, sourceLabel };
-      fillMpzpKeyDataCard(parsed, sourceLabel);
+      // W „mam gotowy projekt” projekt i działka są już znane -> porównujemy je z planem
+      const comparison = (state.projekt && state.projekt.parsed)
+        ? compareProjektMpzp(state.projekt.parsed, parsed, state.dzialka)
+        : null;
+      state.mpzpComparison = comparison;
+      fillMpzpKeyDataCard(parsed, sourceLabel, comparison);
 
       const dz = state.dzialka;
       let msg = `Odczytałem <strong>${sourceLabel}</strong> i wyciągnąłem ${parsed.foundCount} kluczowych parametrów planu — szczegóły w karcie „Zgodność z MPZP” po prawej.`;
@@ -828,7 +834,21 @@ function renderMpzpUpload(step) {
         if (parsed.percent.zabudowa != null) msg += `, a zabudować maks. <strong>${formatNum(Math.round(dz.area * parsed.percent.zabudowa / 100))} m²</strong>`;
         msg += '.';
       }
-      msg += ' ' + (MPZP_TYP_NOTE[state.answers.typ_domu] || 'Twój dom jednorodzinny mieści się w ramach planu.');
+      // Minimalna powierzchnia działki wg planu (wszystkie ścieżki)
+      if (parsed.nums && parsed.nums.minDzialka != null) {
+        if (dz && dz.area) {
+          const okDz = dz.area >= parsed.nums.minDzialka;
+          msg += ` Plan wymaga działki o powierzchni min. <strong>${formatNum(parsed.nums.minDzialka)} m²</strong> — Twoja (${formatNum(dz.area)} m²) ${okDz ? 'spełnia ten wymóg' : '<strong>jest poniżej minimum</strong>'}.`;
+        } else {
+          msg += ` Zgodnie z planem minimalna powierzchnia nowo wydzielonej działki to <strong>${formatNum(parsed.nums.minDzialka)} m²</strong>.`;
+        }
+      }
+      // Podsumowanie zgodności projektu (gdy jest projekt) albo ogólna notka
+      if (comparison && comparison.rows.length) {
+        msg += ` ${comparison.summary} Szczegóły w karcie „Zgodność z MPZP”.`;
+      } else {
+        msg += ' ' + (MPZP_TYP_NOTE[state.answers.typ_domu] || 'Twój dom jednorodzinny mieści się w ramach planu.');
+      }
       assistantSay(msg, () => advance(step));
     });
   });
@@ -843,23 +863,45 @@ function showTyping() {
   return typing;
 }
 
-function fillMpzpKeyDataCard(parsed, sourceLabel) {
+function fillMpzpKeyDataCard(parsed, sourceLabel, comparison) {
   unlockCard('card-mpzp');
   const body = $('#card-mpzp-body');
   const dz = state.dzialka;
+  const minDz = parsed.nums && parsed.nums.minDzialka;
   let derivedHtml = '';
   if (dz && dz.area) {
     const bits = [];
     if (parsed.percent.zabudowa != null) bits.push(`maks. zabudowa <strong>${formatNum(Math.round(dz.area * parsed.percent.zabudowa / 100))} m²</strong>`);
     if (parsed.percent.biolCzynna != null) bits.push(`min. zieleń <strong>${formatNum(Math.round(dz.area * parsed.percent.biolCzynna / 100))} m²</strong>`);
-    if (bits.length) derivedHtml = `<div class="mpzp-derived">Dla działki ${formatNum(dz.area)} m²: ${bits.join(', ')}.</div>`;
+    if (bits.length) derivedHtml += `<div class="mpzp-derived">Dla działki ${formatNum(dz.area)} m²: ${bits.join(', ')}.</div>`;
+    if (minDz != null) {
+      const okDz = dz.area >= minDz;
+      derivedHtml += `<div class="mpzp-derived ${okDz ? '' : 'mpzp-warn'}">Min. powierzchnia działki wg planu: <strong>${formatNum(minDz)} m²</strong> — Twoja (${formatNum(dz.area)} m²) ${okDz ? 'spełnia wymóg ✓' : 'jest poniżej minimum ✗'}.</div>`;
+    }
+  } else if (minDz != null) {
+    derivedHtml += `<div class="mpzp-derived">Min. powierzchnia działki wg planu: <strong>${formatNum(minDz)} m²</strong>.</div>`;
   }
+
+  let cmpHtml = '';
+  if (comparison && comparison.rows.length) {
+    const label = s => (s === 'ok' ? 'OK' : s === 'uwaga' ? 'uwaga' : 'niezgodne');
+    cmpHtml = `
+      <div class="mpzp-cmp-title">Zgodność projektu z planem</div>
+      <table class="side-table cmp-table">
+        ${comparison.rows.map(r => `<tr>
+          <td class="st-param">${r.param}<br><span class="cmp-sub">plan: ${r.plan}</span></td>
+          <td class="st-val">${r.projekt}<br><span class="status-pill status-${r.status}">${label(r.status)}</span></td>
+        </tr>`).join('')}
+      </table>`;
+  }
+
   body.innerHTML = `
     <p class="mpzp-summary">Odczytano z: <strong>${sourceLabel}</strong>.</p>
     <table class="side-table">
       ${parsed.rows.map(r => `<tr class="${r.found ? '' : 'mpzp-missing'}"><td class="st-param">${r.param}</td><td class="st-val">${r.wartosc}</td></tr>`).join('')}
     </table>
-    ${derivedHtml}`;
+    ${derivedHtml}
+    ${cmpHtml}`;
 }
 
 /* ---------------- Krok: Upload projektu (PDF) + odczyt parametrów ---------------- */

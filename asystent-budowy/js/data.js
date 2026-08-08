@@ -309,7 +309,8 @@ Teren oznaczony symbolem MN — zabudowa mieszkaniowa jednorodzinna.
 4. Maksymalna powierzchnia zabudowy: 30% powierzchni działki.
 5. Minimalny udział powierzchni biologicznie czynnej: 50%.
 6. Nieprzekraczalna linia zabudowy: 6 m od drogi.
-7. Kolorystyka dachu: odcienie czerwieni, brązu lub grafitu.`;
+7. Minimalna powierzchnia nowo wydzielonej działki budowlanej: 800 m².
+8. Kolorystyka dachu: odcienie czerwieni, brązu lub grafitu.`;
 
 /* Ocena zgodności z MPZP — zwraca listę pozycji do tabeli w karcie bocznej */
 function evaluateMpzp() {
@@ -344,6 +345,9 @@ function parseMpzpText(raw) {
   const m = re => t.match(re);
   const rows = [];
   const percent = { zabudowa: null, biolCzynna: null };
+  // Wartości liczbowe do przeliczeń i porównania z projektem
+  const nums = { wysokosc: null, kondygnacje: null, dachKatMin: null, dachKatMax: null,
+                 zabudowaPct: null, biolPct: null, minDzialka: null };
   const add = (param, wartosc) => rows.push({ param, wartosc: wartosc || 'nie określono w dokumencie', found: !!wartosc });
 
   // Przeznaczenie
@@ -355,13 +359,13 @@ function parseMpzpText(raw) {
   // Wysokość w metrach (tylko gdy wprost o budynku/zabudowie)
   let wys = null;
   const mw = m(/wysoko\S*\s+(?:budynku\s+mieszkalnego|zabudowy|budynku)[^.]{0,40}?(\d{1,2}(?:[.,]\d)?)\s*m(?![\w²2])/i);
-  if (mw) wys = 'maks. ' + mw[1].replace('.', ',') + ' m';
+  if (mw) { wys = 'maks. ' + mw[1].replace('.', ',') + ' m'; nums.wysokosc = parseFloat(mw[1].replace(',', '.')); }
   add('Wysokość zabudowy', wys);
 
   // Liczba kondygnacji
   let kond = null;
   const mk = m(/(\d+)\s+kondygnacj/i) || m(/kondygnacj\w*[^.\d]{0,25}(\d+)/i);
-  if (mk) kond = 'do ' + mk[1] + (/poddasz/i.test(t) ? ' (w tym poddasze)' : '');
+  if (mk) { kond = 'do ' + mk[1] + (/poddasz/i.test(t) ? ' (w tym poddasze)' : ''); nums.kondygnacje = parseInt(mk[1], 10); }
   add('Liczba kondygnacji', kond);
 
   // Geometria dachu
@@ -370,7 +374,7 @@ function parseMpzpText(raw) {
                   : /wielospadow/i.test(t) ? 'wielospadowy' : null;
   let dachAngle = null;
   const ma = m(/(\d{2})\s*[-–]\s*(\d{2})\s*(?:°|stopni|st\.)/);
-  if (ma) dachAngle = ma[1] + '–' + ma[2] + '°';
+  if (ma) { dachAngle = ma[1] + '–' + ma[2] + '°'; nums.dachKatMin = parseInt(ma[1], 10); nums.dachKatMax = parseInt(ma[2], 10); }
   else if (/równym?\s+k[ąa]c/i.test(t)) dachAngle = 'równy kąt';
   let dachVal = null;
   if (dachShape) dachVal = dachShape + (dachAngle ? ', ' + dachAngle : '')
@@ -380,14 +384,14 @@ function parseMpzpText(raw) {
   // Maks. powierzchnia zabudowy [%]
   let zab = null;
   const mz = m(/powierzchni\w*\s+zabudowy[^.]{0,40}?(\d{1,3})\s*%/i);
-  if (mz) { zab = 'maks. ' + mz[1] + '%'; percent.zabudowa = parseInt(mz[1], 10); }
+  if (mz) { zab = 'maks. ' + mz[1] + '%'; percent.zabudowa = parseInt(mz[1], 10); nums.zabudowaPct = percent.zabudowa; }
   add('Maks. powierzchnia zabudowy', zab);
 
   // Min. powierzchnia biologicznie czynna [%]
   let biol = null;
   const mb = m(/(?:biologicznie\s+czynn\S*|aktywn\S*\s+przyrodniczo)[^.]{0,60}?(\d{1,3})\s*%/i)
           || m(/(\d{1,3})\s*%[^.]{0,40}?(?:biologicznie\s+czynn|przyrodniczo)/i);
-  if (mb) { biol = 'min. ' + mb[1] + '%'; percent.biolCzynna = parseInt(mb[1], 10); }
+  if (mb) { biol = 'min. ' + mb[1] + '%'; percent.biolCzynna = parseInt(mb[1], 10); nums.biolPct = percent.biolCzynna; }
   add('Min. pow. biologicznie czynna', biol);
 
   // Linia zabudowy
@@ -396,6 +400,13 @@ function parseMpzpText(raw) {
   if (ml) linia = 'min. ' + ml[1].replace('.', ',') + ' m';
   else if (/nieprzekraczaln\S*\s+lini\S*\s+zabudowy/i.test(t)) linia = 'wg rysunku planu';
   add('Linia zabudowy', linia);
+
+  // Min. powierzchnia działki budowlanej [m²]
+  let minDz = null;
+  const mdz = m(/minimaln\S*\s+powierzchni\S*[^.]{0,60}?dzia[łl]k\S*[^.]{0,30}?(\d{2,5})\s*m\s*[²2]/i)
+           || m(/powierzchni\S*\s+dzia[łl]k\S*[^.]{0,50}?(?:nie\s+mniejsz\S*\s+ni[żz]|minimum|min\S*)[^.\d]{0,10}(\d{2,5})\s*m\s*[²2]/i);
+  if (mdz) { minDz = mdz[1] + ' m²'; nums.minDzialka = parseInt(mdz[1], 10); }
+  add('Min. powierzchnia działki', minDz ? 'min. ' + minDz : null);
 
   // Bonusy — tylko gdy realnie znalezione
   const mf = m(/front\w*\s+dzia[łl]ki[^.]{0,40}?(\d{1,3})\s*m\b/i);
@@ -406,7 +417,48 @@ function parseMpzpText(raw) {
   if (mg) rows.push({ param: 'Maks. pow. bud. gospodarczego', wartosc: mg[1] + ' m²', found: true });
 
   const foundCount = rows.filter(r => r.found).length;
-  return { rows, percent, foundCount };
+  return { rows, percent, nums, foundCount };
+}
+
+/* Porównanie parametrów projektu z ustaleniami MPZP (etap „mam gotowy projekt”).
+   Zwraca wiersze do tabeli zgodności (plan vs projekt) i status każdego z nich. */
+function compareProjektMpzp(prj, mp, dzialka) {
+  const rows = [];
+  const n = (mp && mp.nums) || {};
+  const dz = dzialka && dzialka.area ? dzialka.area : null;
+  const fmt = x => new Intl.NumberFormat('pl-PL').format(Math.round(x));
+  const fmtDec = x => (Number.isInteger(x) ? String(x) : String(x).replace('.', ','));
+  const push = (param, plan, projekt, status) => rows.push({ param, plan, projekt, status });
+
+  if (prj && prj.powZabudowy != null && n.zabudowaPct != null && dz) {
+    const limit = dz * n.zabudowaPct / 100;
+    push('Powierzchnia zabudowy', `maks. ${n.zabudowaPct}% = ${fmt(limit)} m²`, `${fmt(prj.powZabudowy)} m²`,
+         prj.powZabudowy <= limit ? 'ok' : 'niezgodne');
+  }
+  if (prj && prj.kondygnacje != null && n.kondygnacje != null) {
+    push('Liczba kondygnacji', `do ${n.kondygnacje}`, String(prj.kondygnacje),
+         prj.kondygnacje <= n.kondygnacje ? 'ok' : 'niezgodne');
+  }
+  if (prj && prj.wysokosc != null && n.wysokosc != null) {
+    push('Wysokość zabudowy', `maks. ${fmtDec(n.wysokosc)} m`, `${fmtDec(prj.wysokosc)} m`,
+         prj.wysokosc <= n.wysokosc ? 'ok' : 'niezgodne');
+  }
+  if (prj && prj.katDachu != null && n.dachKatMin != null && n.dachKatMax != null) {
+    const ok = prj.katDachu >= n.dachKatMin && prj.katDachu <= n.dachKatMax;
+    push('Kąt nachylenia dachu', `${n.dachKatMin}–${n.dachKatMax}°`, `${prj.katDachu}°`, ok ? 'ok' : 'niezgodne');
+  }
+  if (dz && n.minDzialka != null) {
+    push('Powierzchnia działki', `min. ${fmt(n.minDzialka)} m²`, `${fmt(dz)} m²`,
+         dz >= n.minDzialka ? 'ok' : 'niezgodne');
+  }
+
+  const bad = rows.filter(r => r.status !== 'ok').length;
+  const summary = !rows.length
+    ? 'Nie miałem wspólnych parametrów projektu i planu do porównania.'
+    : bad === 0
+      ? `Porównałem parametry projektu z planem — wszystkie ${rows.length} są zgodne. ✓`
+      : `Porównałem parametry projektu z planem — ${bad} z ${rows.length} nie mieści się w planie.`;
+  return { rows, summary, bad };
 }
 
 /* Przykładowy opis projektu (parsowany, gdy użytkownik kliknie „Użyj przykładowego projektu”) */

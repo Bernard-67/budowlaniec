@@ -1637,7 +1637,6 @@ document.addEventListener('DOMContentLoaded', () => {
   state = freshState();
   initStart();
 
-  $('#btn-history').addEventListener('click', () => openModal('modal-history'));
   $('#btn-restart').addEventListener('click', openRestartModal);
   $('#btn-restart-confirm').addEventListener('click', doRestart);
 

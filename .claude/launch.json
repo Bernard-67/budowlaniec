@@ -5,7 +5,8 @@
       "name": "asystent-budowy",
       "runtimeExecutable": "node",
       "runtimeArgs": ["asystent-budowy/server.cjs"],
-      "port": 4599
+      "port": 4599,
+      "autoPort": true
     }
   ]
 }

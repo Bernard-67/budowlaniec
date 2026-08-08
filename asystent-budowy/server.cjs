@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 
 const root = __dirname;
-const port = 4599;
+const port = process.env.PORT || 4599;
 
 const mime = {
   '.html': 'text/html; charset=utf-8',

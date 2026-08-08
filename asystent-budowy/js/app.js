@@ -1571,10 +1571,13 @@ function resetSideCards() {
   ['card-mpzp', 'card-kosztorys', 'card-oferty'].forEach(id => {
     const card = $('#' + id);
     card.classList.add('card-locked');
+    setCardOpen(card, false);
   });
   $('#card-mpzp-body').innerHTML = '<p class="card-placeholder">Odblokuje się po analizie planu miejscowego.</p>';
   $('#card-kosztorys-body').innerHTML = '<p class="card-placeholder">Odblokuje się po wygenerowaniu kosztorysu.</p>';
   $('#card-oferty-body').innerHTML = '<p class="card-placeholder">Odblokuje się po porównaniu ofert.</p>';
+  // na starcie widoczna jest tylko checklista
+  setCardOpen($('[data-card="checklist"]'), true);
 }
 
 function unlockCard(id) {
@@ -1582,6 +1585,37 @@ function unlockCard(id) {
   card.classList.remove('card-locked');
   card.classList.add('unlocking');
   setTimeout(() => card.classList.remove('unlocking'), 400);
+  // świeżo odblokowany wynik pokazujemy od razu (akordeon: reszta się zwija)
+  openCardExclusive(card);
+}
+
+/* --- Akordeon paneli bocznych: naraz otwarta tylko jedna karta --- */
+function setCardOpen(card, open) {
+  if (!card) return;
+  card.classList.toggle('open', open);
+  const head = card.querySelector('.card-head');
+  if (head) head.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+
+function openCardExclusive(card) {
+  if (!card) return;
+  $$('.side-col .card.collapsible').forEach(c => setCardOpen(c, c === card));
+}
+
+function setupAccordion() {
+  const side = $('.side-col');
+  if (!side) return;
+  side.addEventListener('click', e => {
+    const head = e.target.closest('.card-head');
+    if (!head || !side.contains(head)) return;
+    const card = head.closest('.card.collapsible');
+    if (!card || card.classList.contains('card-locked')) return; // zablokowane ignorujemy
+    if (card.classList.contains('open')) {
+      setCardOpen(card, false);            // klik w otwartą → zwija
+    } else {
+      openCardExclusive(card);             // klik w zamkniętą → otwiera tylko ją
+    }
+  });
 }
 
 /* =============================================================
@@ -1636,6 +1670,7 @@ function parseNum(str) { return parseInt(String(str).replace(/[^\d]/g, ''), 10) 
 document.addEventListener('DOMContentLoaded', () => {
   state = freshState();
   initStart();
+  setupAccordion();
 
   $('#btn-restart').addEventListener('click', openRestartModal);
   $('#btn-restart-confirm').addEventListener('click', doRestart);

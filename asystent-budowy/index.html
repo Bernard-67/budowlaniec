@@ -64,32 +64,56 @@
 
       <aside class="side-col">
         <!-- Checklista -->
-        <div class="card">
-          <div class="card-head"><span class="card-ico">✅</span> Checklista kompletności</div>
-          <ul id="checklist" class="checklist"><!-- pozycje --></ul>
+        <div class="card collapsible open" data-card="checklist">
+          <button type="button" class="card-head" aria-expanded="true">
+            <span class="card-ico">✅</span>
+            <span class="card-title">Checklista kompletności</span>
+            <span class="card-toggle" aria-hidden="true"></span>
+          </button>
+          <div class="card-collapse">
+            <ul id="checklist" class="checklist"><!-- pozycje --></ul>
+          </div>
         </div>
 
         <!-- MPZP -->
-        <div id="card-mpzp" class="card card-locked">
-          <div class="card-head"><span class="card-ico">📋</span> Zgodność z MPZP</div>
-          <div class="card-body" id="card-mpzp-body">
-            <p class="card-placeholder">Odblokuje się po analizie planu miejscowego.</p>
+        <div id="card-mpzp" class="card collapsible card-locked" data-card="mpzp">
+          <button type="button" class="card-head" aria-expanded="false">
+            <span class="card-ico">📋</span>
+            <span class="card-title">Zgodność z MPZP</span>
+            <span class="card-toggle" aria-hidden="true"></span>
+          </button>
+          <div class="card-collapse">
+            <div class="card-body" id="card-mpzp-body">
+              <p class="card-placeholder">Odblokuje się po analizie planu miejscowego.</p>
+            </div>
           </div>
         </div>
 
         <!-- Kosztorys -->
-        <div id="card-kosztorys" class="card card-locked">
-          <div class="card-head"><span class="card-ico">💰</span> Kosztorys i materiały</div>
-          <div class="card-body" id="card-kosztorys-body">
-            <p class="card-placeholder">Odblokuje się po wygenerowaniu kosztorysu.</p>
+        <div id="card-kosztorys" class="card collapsible card-locked" data-card="kosztorys">
+          <button type="button" class="card-head" aria-expanded="false">
+            <span class="card-ico">💰</span>
+            <span class="card-title">Kosztorys i materiały</span>
+            <span class="card-toggle" aria-hidden="true"></span>
+          </button>
+          <div class="card-collapse">
+            <div class="card-body" id="card-kosztorys-body">
+              <p class="card-placeholder">Odblokuje się po wygenerowaniu kosztorysu.</p>
+            </div>
           </div>
         </div>
 
         <!-- Oferty -->
-        <div id="card-oferty" class="card card-locked">
-          <div class="card-head"><span class="card-ico">📊</span> Oferty i kolejność prac</div>
-          <div class="card-body" id="card-oferty-body">
-            <p class="card-placeholder">Odblokuje się po porównaniu ofert.</p>
+        <div id="card-oferty" class="card collapsible card-locked" data-card="oferty">
+          <button type="button" class="card-head" aria-expanded="false">
+            <span class="card-ico">📊</span>
+            <span class="card-title">Oferty i kolejność prac</span>
+            <span class="card-toggle" aria-hidden="true"></span>
+          </button>
+          <div class="card-collapse">
+            <div class="card-body" id="card-oferty-body">
+              <p class="card-placeholder">Odblokuje się po porównaniu ofert.</p>
+            </div>
           </div>
         </div>
       </aside>

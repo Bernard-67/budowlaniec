@@ -1,98 +1,52 @@
-# Mój Koszyk
+# Asystent Budowy Domu — prototyp
 
-Prosta aplikacja sklepowa: wyświetla listę produktów, pozwala dodawać je do koszyka
-i pokazuje sumę do zapłaty w złotych.
+Interaktywny asystent planowania budowy domu jednorodzinnego. Prowadzi krok po kroku:
+od pomysłu, przez wybór działki i analizę planu miejscowego (MPZP), po orientacyjny
+koszt budowy, ocenę budżetu i porównanie ofert wykonawców.
 
-## Jak uruchomić projekt — krok po kroku (dla wszystkich)
+Aplikacja jest w całości statyczna (HTML + CSS + czysty JavaScript). Odczyt plików PDF
+z planem miejscowym odbywa się lokalnie w przeglądarce (biblioteka pdf.js) — żadne dane
+nie opuszczają urządzenia użytkownika, aplikacja nie ma backendu ani bazy danych.
 
-### Opcja 1: Samodzielnie na Macu (macOS)
+Kod aplikacji znajduje się w folderze [`asystent-budowy/`](asystent-budowy/).
 
-#### Krok 1: Otwórz Terminal
-- Naciśnij klawisze: `Cmd + Spacja`
-- Wpisz: `terminal`
-- Kliknij aplikację „Terminal"
+## Trzy ścieżki startowe
 
-#### Krok 2: Przejdź do folderu projektu
-Skopiuj i wklej do Terminala (Cmd + V):
+- **Mam tylko pomysł** — doprecyzowanie wizji, orientacyjny budżet, jak szukać działki i MPZP.
+- **Mam działkę** — wizja i budżet + analiza zgodności z MPZP dla konkretnej działki.
+- **Mam gotowy projekt** — pełen zakres: analiza MPZP, kosztorys i materiały, porównanie ofert i kolejność prac.
+
+## Jak uruchomić lokalnie
+
+Aplikacja jest statyczna — wystarczy dowolny serwer plików. W repozytorium jest
+pomocniczy serwer w Node.js.
+
+### Opcja 1: Node.js (serwer pomocniczy)
+
+W folderze projektu:
+
 ```bash
-cd ~/Desktop/Claude_workspace/AIDEAS/course_modules/zadanie_2_kod_repo
-```
-Naciśnij Enter.
-
-#### Krok 3: Zainstaluj zależności
-Wklej do Terminala:
-```bash
-npm install
-```
-Naciśnij Enter i czekaj (może trwać kilkadziesiąt sekund).
-
-#### Krok 4: Uruchom aplikację
-Wklej do Terminala:
-```bash
-npm run dev
-```
-Naciśnij Enter.
-
-#### Krok 5: Otwórz aplikację w przeglądarce
-W Terminalu zobaczysz coś jak:
-```
-Local:   http://localhost:5173/
+node asystent-budowy/server.cjs
 ```
 
-Skopiuj ten adres (np. `http://localhost:5173`) i wklej go w pasek adresu przeglądarki (Chrome, Safari, Firefox).
+Następnie otwórz w przeglądarce adres wypisany w konsoli (domyślnie `http://localhost:4599`).
+Port można zmienić zmienną środowiskową `PORT`.
 
-**Gotowe!** Aplikacja powinna się teraz wyświetlić.
+### Opcja 2: Claude Code
 
----
+Otwórz folder w Claude Code i napisz do agenta: „uruchom tę aplikację".
 
-### Opcja 2: Samodzielnie na Windowsie
+## Publikacja (hosting)
 
-#### Krok 1: Otwórz Command Prompt (CMD) lub PowerShell
-- Naciśnij klawisz `Windows` (logo Windowsa)
-- Wpisz: `cmd` lub `powershell`
-- Kliknij `Command Prompt` lub `Windows PowerShell`
+Aplikacja jest hostowana na Netlify. Konfiguracja w [`netlify.toml`](netlify.toml)
+publikuje folder `asystent-budowy` bez kroku budowania (czysty HTML/CSS/JS).
+Każdy `git push` do repozytorium GitHub uruchamia automatyczny redeploy.
 
-#### Krok 2: Przejdź do folderu projektu
-Skopiuj i wklej do Terminala (Ctrl + V):
-```bash
-cd Desktop\Claude_workspace\AIDEAS\course_modules\zadanie_2_kod_repo
-```
-Naciśnij Enter.
+- Repozytorium: https://github.com/Bernard-67/budowlaniec
+- Działająca aplikacja: https://grand-vacherin-0a50ac.netlify.app
 
-#### Krok 3: Zainstaluj zależności
-Wklej do Terminala:
-```bash
-npm install
-```
-Naciśnij Enter i czekaj (może trwać kilkadziesiąt sekund).
+## Technologie
 
-#### Krok 4: Uruchom aplikację
-Wklej do Terminala:
-```bash
-npm run dev
-```
-Naciśnij Enter.
-
-#### Krok 5: Otwórz aplikację w przeglądarce
-W Terminalu zobaczysz coś jak:
-```
-Local:   http://localhost:5173/
-```
-
-Skopiuj ten adres (np. `http://localhost:5173`) i wklej go w pasek adresu przeglądarki (Chrome, Edge, Firefox).
-
-**Gotowe!** Aplikacja powinna się teraz wyświetlić.
-
----
-
-### Opcja 3: Najłatwiej — niech Claude to zrobi 🤖
-
-Jeśli masz zainstalowany Claude Code:
-
-1. Otwórz ten folder w Claude Code
-2. Napisz do agenta: „uruchom tę aplikację"
-3. Kliknij w link, który ci poda (np. `http://localhost:5173`)
-
----
-
-**Aby zatrzymać aplikację:** W Terminalu naciśnij `Ctrl + C`
+JavaScript, HTML, CSS · biblioteka pdf.js (odczyt PDF w przeglądarce) ·
+Node.js (lokalny serwer podglądu) · Git i GitHub · hosting Netlify.
+Zbudowano przy użyciu Claude Code (model Claude Opus).

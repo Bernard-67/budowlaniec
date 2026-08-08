@@ -426,6 +426,29 @@ html, body {
   transition: color .12s ease, background .12s ease;
 }
 .chat-table .kt-del:hover { color: var(--bad); background: var(--bad-bg); }
+
+/* Formularz uzupełnienia ofert */
+.oferta-forms { display: flex; flex-direction: column; gap: 12px; }
+.oferta-form-card { border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface-2); padding: 12px; }
+.oferta-form-card .oferta-wyk { width: 100%; font-weight: 600; }
+.oferta-zakres { margin-top: 10px; }
+.oferta-zakres .oz-label { font-size: 12.5px; font-weight: 600; color: var(--green-900); margin-bottom: 6px; }
+.oferta-zakres .oz-item { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--ink-soft); padding: 3px 0; cursor: pointer; }
+.oferta-zakres .oz-item input { accent-color: var(--green-600); width: 15px; height: 15px; }
+
+/* Macierz porównania ofert */
+.oferty-banner { font-size: 12.5px; border-radius: var(--radius-sm); padding: 8px 10px; margin-bottom: 10px; line-height: 1.45; }
+.oferty-banner.ok { background: var(--ok-bg); color: var(--ok); }
+.oferty-banner.diff { background: var(--warn-bg); color: var(--warn); }
+.oferty-matrix-wrap { overflow-x: auto; }
+.oferty-matrix { width: 100%; border-collapse: collapse; font-size: 12px; }
+.oferty-matrix th, .oferty-matrix td { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: center; white-space: nowrap; }
+.oferty-matrix th { color: var(--green-900); font-weight: 700; font-size: 11.5px; }
+.oferty-matrix th:first-child, .oferty-matrix .om-rowlabel { text-align: left; color: var(--ink-soft); font-weight: 600; }
+.oferty-matrix .om-section td { background: var(--surface-2); font-weight: 700; color: var(--green-900); text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .4px; }
+.oferty-matrix .om-yes { color: var(--ok); font-weight: 700; }
+.oferty-matrix .om-no { color: var(--bad); font-weight: 600; font-size: 11px; }
+.oferty-matrix .om-total td { font-weight: 700; color: var(--green-900); border-bottom: none; }
 .chat-table tfoot td { font-weight: 700; color: var(--green-900); border-bottom: none; padding-top: 12px; }
 
 /* Parametry domu (metraż + garaż) */

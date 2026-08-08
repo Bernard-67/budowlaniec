@@ -473,6 +473,52 @@ function computeKosztorys() {
 }
 
 /* -------------------------------------------------------------
+   Porównanie ofert wykonawców — katalog zakresu, dane przykładowe, parser.
+   ------------------------------------------------------------- */
+const OFERTA_ZAKRES = [
+  { id: 'zerowy',      label: 'Stan zerowy (fundamenty)' },
+  { id: 'sciany',      label: 'Ściany i stropy' },
+  { id: 'dach',        label: 'Konstrukcja i pokrycie dachu' },
+  { id: 'okna',        label: 'Okna i drzwi zewnętrzne' },
+  { id: 'instalacje',  label: 'Instalacje (elektr., wod-kan, ogrzewanie)' },
+  { id: 'wykonczenie', label: 'Tynki, wylewki, wykończenie' },
+  { id: 'elewacja',    label: 'Elewacja i zagospodarowanie' },
+];
+
+/* Przykładowe oferty (pełne dane) — różny zakres, żeby pokazać braki w porównaniu */
+const SAMPLE_OFERTY_SET = [
+  { wykonawca: 'BudDom Sp. z o.o.', cenaMaterialy: 230000, cenaRobocizna: 155000, termin: '7 mies.', zakres: ['zerowy', 'sciany', 'dach', 'okna'] },
+  { wykonawca: 'Ekipa Kowalski',    cenaMaterialy: 120000, cenaRobocizna: 130000, termin: '5 mies.', zakres: ['zerowy', 'sciany', 'dach'] },
+  { wykonawca: 'SolidBud',          cenaMaterialy: 300000, cenaRobocizna: 220000, termin: '9 mies.', zakres: ['zerowy', 'sciany', 'dach', 'okna', 'instalacje'] },
+];
+
+/* Best-effort odczyt oferty z tekstu PDF: wykonawca + ceny (zakres uzupełnia użytkownik) */
+function parseOfertaText(raw, filename) {
+  const t = String(raw || '').replace(/[Ŝŝ]/g, 'ż').replace(/\s+/g, ' ');
+  const num = s => (s ? (parseInt(String(s).replace(/[^\d]/g, ''), 10) || null) : null);
+  const grab = re => { const m = t.match(re); return m ? m[1] : null; };
+  const wyk = grab(/([A-ZŻŹŚŁÓ][\w .-]+(?:Sp\.\s*z\s*o\.\s*o\.|S\.A\.|sp\.\s*j\.))/)
+           || grab(/(?:wykonawca|oferent|firma)\s*[:\-]?\s*([A-ZŻŹŚŁÓ][^;.]{2,40})/i);
+  return {
+    wykonawca: (wyk ? wyk.trim() : (filename ? filename.replace(/\.pdf$/i, '').replace(/[_-]+/g, ' ') : 'Oferta')),
+    cenaMaterialy: num(grab(/materia[łl]\w*[^.\d]{0,25}?(\d[\d\s.,]*)\s*(?:zł|PLN)/i)),
+    cenaRobocizna: num(grab(/robocizn\w*[^.\d]{0,25}?(\d[\d\s.,]*)\s*(?:zł|PLN)/i)),
+    cenaRazem: num(grab(/(?:cena|warto\S*|razem|suma)[^.\d]{0,25}?(\d[\d\s.,]*)\s*(?:zł|PLN)/i)),
+    zakres: [],
+  };
+}
+
+/* Porównanie ofert: unia pozycji zakresu (w kolejności katalogu) + czy zakres identyczny */
+function compareOferty(offers) {
+  const present = new Set();
+  offers.forEach(o => (o.zakres || []).forEach(id => present.add(id)));
+  const points = OFERTA_ZAKRES.filter(z => present.has(z.id));
+  const key = o => (o.zakres || []).slice().sort().join(',');
+  const identyczny = offers.length > 0 && offers.every(o => key(o) === key(offers[0]));
+  return { points, identyczny };
+}
+
+/* -------------------------------------------------------------
    Kalkulator kosztu wg standardu wykończenia (mock).
    Stawki uśrednione zł/m² — koszt budowy „pod klucz”, dane orientacyjne.
    ------------------------------------------------------------- */

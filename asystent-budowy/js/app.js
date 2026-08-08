@@ -1287,19 +1287,129 @@ function renderOfertyUpload(step) {
       step.demoFiles.forEach((f, i) => setTimeout(() => addChip(f.name, f.size, { sample: true }), i * 180));
     });
 
-    $('#of-compare').addEventListener('click', () => {
+    $('#of-compare').addEventListener('click', async () => {
       if (attached.length < 2) {
         const err = $('#of-file-error');
         err.textContent = 'Dodaj co najmniej 2 oferty do porównania.';
         err.style.display = 'block';
         return;
       }
-      state.oferty = { source, list: attached.map(f => ({ name: f.name, sample: !!f.sample })), wybrana: null };
+      const files = attached.slice();
       block.remove();
-      addBubble('user', `Wgrałem ${attached.length} oferty: ${attached.map(f => f.name).join(', ')}.`);
-      assistantSay(`Zebrałem ${attached.length} ofert. W kolejnym kroku uzupełnimy dane i przygotuję szczegółowe porównanie (zakres, materiały, robocizna).`, () => advance(step));
+      addBubble('user', `Wgrałem ${files.length} oferty: ${files.map(f => f.name).join(', ')}.`);
+
+      if (source === 'demo') {
+        const offers = SAMPLE_OFERTY_SET.slice(0, files.length).map(o => ({ ...o, zakres: o.zakres.slice() }));
+        finalizeOferty(step, 'demo', offers);
+      } else {
+        const typing = showTyping();
+        const parsed = [];
+        for (const f of files) {
+          try { parsed.push(parseOfertaText(await extractPdfText(f.file), f.name)); }
+          catch (e) { parsed.push({ wykonawca: f.name.replace(/\.pdf$/i, ''), cenaMaterialy: null, cenaRobocizna: null, cenaRazem: null, zakres: [] }); }
+        }
+        typing.remove();
+        renderOfertyForm(step, parsed);
+      }
     });
   });
+}
+
+/* Formularz uzupełnienia danych ofert (dla realnych PDF) */
+function renderOfertyForm(step, parsed) {
+  addBubble('assistant', 'Odczytałem oferty najlepiej, jak się dało. Uzupełnij/popraw dane — zwłaszcza <strong>zakres</strong> (co obejmuje oferta) oraz podział ceny na materiały i robociznę.');
+  const block = addActionBlock();
+  block.innerHTML = `
+    <div class="widget-label">✏️ Uzupełnij dane ofert (${parsed.length})</div>
+    <div class="oferta-forms">
+      ${parsed.map((p, i) => `
+        <div class="oferta-form-card" data-i="${i}">
+          <input class="param-input oferta-wyk" type="text" value="${escAttr(p.wykonawca || '')}" placeholder="Nazwa wykonawcy">
+          <div class="param-grid" style="margin-top:8px">
+            <div class="param-field">
+              <label>Materiały</label>
+              <div class="param-input-wrap"><input class="param-input oferta-mat" type="text" inputmode="numeric" value="${p.cenaMaterialy ? formatNum(p.cenaMaterialy) : ''}" placeholder="np. 230 000"><span class="pi-unit">zł</span></div>
+            </div>
+            <div class="param-field">
+              <label>Robocizna</label>
+              <div class="param-input-wrap"><input class="param-input oferta-rob" type="text" inputmode="numeric" value="${p.cenaRobocizna ? formatNum(p.cenaRobocizna) : ''}" placeholder="np. 155 000"><span class="pi-unit">zł</span></div>
+            </div>
+          </div>
+          <div class="oferta-zakres">
+            <div class="oz-label">Zakres oferty (zaznacz, co obejmuje):</div>
+            ${OFERTA_ZAKRES.map(z => `<label class="oz-item"><input type="checkbox" class="oferta-zak" data-id="${z.id}"> ${z.label}</label>`).join('')}
+          </div>
+        </div>`).join('')}
+    </div>
+    <div class="widget-actions">
+      <button class="btn btn-primary" id="of-form-done">Gotowe — porównaj →</button>
+    </div>`;
+  scrollChat();
+
+  $$('.oferta-mat, .oferta-rob', block).forEach(inp => {
+    inp.addEventListener('input', () => { const n = parseNum(inp.value); inp.value = n ? formatNum(n) : ''; });
+  });
+
+  $('#of-form-done').addEventListener('click', () => {
+    const offers = $$('.oferta-form-card', block).map(card => ({
+      wykonawca: ($('.oferta-wyk', card).value.trim() || 'Oferta'),
+      cenaMaterialy: parseNum($('.oferta-mat', card).value),
+      cenaRobocizna: parseNum($('.oferta-rob', card).value),
+      zakres: $$('.oferta-zak', card).filter(c => c.checked).map(c => c.dataset.id),
+    }));
+    block.remove();
+    finalizeOferty(step, 'real', offers);
+  });
+}
+
+/* Zapisuje oferty, wypełnia kartę boczną i pokazuje macierz porównania */
+function finalizeOferty(step, source, offers) {
+  offers.forEach(o => { o.cenaRazem = (o.cenaMaterialy || 0) + (o.cenaRobocizna || 0); });
+  state.oferty = { source, list: offers, wybrana: null };
+  fillOfertyCard(offers, null);
+  assistantSay(`Gotowe — porównałem ${offers.length} ofert. Poniżej szczegółowe zestawienie.`, () => renderOfertyMatrix(step));
+}
+
+/* Macierz porównania ofert: zakres (z „brak”), materiały/robocizna/razem + baner zgodności */
+function renderOfertyMatrix(step) {
+  const offers = state.oferty.list;
+  const { points, identyczny } = compareOferty(offers);
+  const cols = offers.length + 1;
+
+  const block = addActionBlock();
+  block.innerHTML = `
+    <div class="widget-label">📊 Porównanie ofert</div>
+    <div class="oferty-banner ${identyczny ? 'ok' : 'diff'}">${identyczny
+      ? '✓ Wszystkie oferty mają ten sam zakres — ceny są bezpośrednio porównywalne.'
+      : '⚠ Oferty mają różny zakres. „brak” oznacza, że dana oferta nie obejmuje pozycji — porównuj ceny ostrożnie.'}</div>
+    <div class="oferty-matrix-wrap">
+      <table class="oferty-matrix">
+        <thead><tr><th>Pozycja</th>${offers.map(o => `<th>${o.wykonawca}</th>`).join('')}</tr></thead>
+        <tbody>
+          <tr class="om-section"><td colspan="${cols}">Zakres</td></tr>
+          ${points.map(p => `<tr><td class="om-rowlabel">${p.label}</td>${offers.map(o => o.zakres.includes(p.id)
+            ? '<td class="om-yes">✓</td>' : '<td class="om-no">brak</td>').join('')}</tr>`).join('')}
+          <tr class="om-section"><td colspan="${cols}">Ceny</td></tr>
+          <tr><td class="om-rowlabel">Materiały</td>${offers.map(o => `<td>${formatNum(o.cenaMaterialy || 0)} zł</td>`).join('')}</tr>
+          <tr><td class="om-rowlabel">Robocizna</td>${offers.map(o => `<td>${formatNum(o.cenaRobocizna || 0)} zł</td>`).join('')}</tr>
+          <tr class="om-total"><td class="om-rowlabel">Razem</td>${offers.map(o => `<td>${formatNum(o.cenaRazem)} zł</td>`).join('')}</tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="widget-actions"><button class="btn btn-primary" id="of-matrix-next">Dalej →</button></div>`;
+  scrollChat();
+
+  $('#of-matrix-next').addEventListener('click', () => { block.remove(); advance(step); });
+}
+
+function fillOfertyCard(offers, selectedIdx) {
+  unlockCard('card-oferty');
+  const body = $('#card-oferty-body');
+  body.innerHTML = `
+    <table class="side-table">
+      <tr><td class="st-param" style="font-weight:600">Wykonawca / zakres</td><td class="st-val">Razem</td></tr>
+      ${offers.map((o, i) => `<tr><td class="st-param">${o.wykonawca}${selectedIdx === i ? ' ✔' : ''}<br><span style="color:var(--ink-faint);font-size:11px">zakres ${o.zakres.length}/${OFERTA_ZAKRES.length} pozycji</span></td><td class="st-val">${formatNum(o.cenaRazem)} zł</td></tr>`).join('')}
+    </table>`;
 }
 
 /* ---------------- Krok: Oferty ---------------- */

@@ -35,6 +35,7 @@ function freshState() {
     kosztorysSuma: 0,
     kosztorysEdited: false,
     kosztStandard: null,   // wybrany standard + koszt (etap „tylko pomysł”)
+    buildRates: defaultBuildRates(),  // edytowalne stawki zł/m² per standard
     dzialka: null,         // szacunek działki: { area, pricePerM2, cost }
     mpzp: null,            // odczyt MPZP: { source, parsed }
     projekt: null,         // odczyt projektu: { source, parsed, sourceLabel }
@@ -312,14 +313,23 @@ function renderKosztStandard(step) {
   assistantSay(md(step.intro), () => {
     const pu = state.answers.powUzytkowa || 0;
     const pg = state.answers.powGarazu || 0;
-    const options = computeCostByStandard(pu, pg);
+    if (!state.buildRates) state.buildRates = defaultBuildRates();
 
     const block = addActionBlock();
-    const cardsHtml = options.map(o => `
-      <div class="std-card ${o.featured ? 'featured' : ''}">
+    const cardsHtml = computeCostByStandard(pu, pg, state.buildRates).map(o => `
+      <div class="std-card ${o.featured ? 'featured' : ''}" data-key="${o.key}">
         <div class="std-name">${o.label}</div>
-        <div class="std-total">${formatPln(o.total)}</div>
-        <div class="std-break">Dom: ${formatNum(pu)} m² × ${formatNum(o.rateDom)} zł/m²${pg > 0 ? `<br>Garaż: ${formatNum(pg)} m² × ${formatNum(o.rateGaraz)} zł/m²` : ''}</div>
+        <div class="std-total" data-total>${formatPln(o.total)}</div>
+        <div class="std-break">
+          <label class="rate-row">Dom: ${formatNum(pu)} m² ×
+            <input class="rate-input" type="number" min="0" step="100" inputmode="numeric"
+                   data-rate="dom" value="${o.rateDom}" aria-label="Stawka za m² — dom, ${o.label}"> zł/m²
+          </label>
+          ${pg > 0 ? `<label class="rate-row">Garaż: ${formatNum(pg)} m² ×
+            <input class="rate-input" type="number" min="0" step="100" inputmode="numeric"
+                   data-rate="garaz" value="${o.rateGaraz}" aria-label="Stawka za m² — garaż, ${o.label}"> zł/m²
+          </label>` : ''}
+        </div>
         <div class="std-desc">${o.opis}</div>
         <button class="btn btn-secondary std-pick" data-key="${o.key}">Wybieram ten →</button>
       </div>`).join('');
@@ -327,12 +337,26 @@ function renderKosztStandard(step) {
     block.innerHTML = `
       <div class="widget-label">💰 Orientacyjny koszt budowy wg standardu</div>
       <div class="std-cards">${cardsHtml}</div>
-      <div class="std-note">Stawki uśrednione (koszt budowy „pod klucz”, dane orientacyjne). Szczegóły trafią do karty „Kosztorys i materiały” po prawej.</div>`;
+      <div class="std-note">Stawki zł/m² możesz edytować w każdym wariancie — suma przeliczy się na bieżąco. Wartości domyślne są uśrednione (koszt „pod klucz”, orientacyjnie). Szczegóły trafią do karty „Kosztorys i materiały” po prawej.</div>`;
     scrollChat();
+
+    // Edycja stawek → aktualizacja stanu i przeliczenie sumy danego wariantu na żywo
+    $$('.rate-input', block).forEach(input => {
+      input.addEventListener('input', () => {
+        const card = input.closest('.std-card');
+        const key = card.dataset.key;
+        const val = parseNum(input.value);
+        if (!state.buildRates[key]) state.buildRates[key] = {};
+        if (input.dataset.rate === 'dom') state.buildRates[key].rateDom = val;
+        else state.buildRates[key].rateGaraz = val;
+        const opt = computeCostByStandard(pu, pg, state.buildRates).find(o => o.key === key);
+        $('[data-total]', card).textContent = formatPln(opt.total);
+      });
+    });
 
     $$('.std-pick', block).forEach(btn => {
       btn.addEventListener('click', () => {
-        const pick = options.find(o => o.key === btn.dataset.key);
+        const pick = computeCostByStandard(pu, pg, state.buildRates).find(o => o.key === btn.dataset.key);
         state.answers.standard = pick.key;
         state.kosztStandard = { ...pick, powUzytkowa: pu, powGarazu: pg };
         block.remove();
@@ -502,7 +526,7 @@ function renderBudzetOcena(step) {
   // Podpowiedź tańszego standardu (uwzględnia koszt działki, jeśli podana)
   let suggestionHtml = '';
   if (verdict.status === 'over' && verdict.budgetMax != null && ks) {
-    const opts = computeCostByStandard(ks.powUzytkowa, ks.powGarazu);
+    const opts = computeCostByStandard(ks.powUzytkowa, ks.powGarazu, state.buildRates);
     const fit = opts.filter(o => (o.total + plotCost) <= verdict.budgetMax);
     if (fit.length) {
       const best = fit[fit.length - 1];

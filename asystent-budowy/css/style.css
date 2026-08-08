@@ -479,6 +479,17 @@ html, body {
 .std-card .std-name { font-size: 13.5px; font-weight: 700; color: var(--green-900); }
 .std-card .std-total { font-size: 20px; font-weight: 750; color: var(--brick-700); font-variant-numeric: tabular-nums; }
 .std-card .std-break { font-size: 11.5px; color: var(--ink-soft); line-height: 1.5; }
+.std-card .rate-row { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+.rate-input {
+  width: 66px; padding: 2px 6px; font: inherit; font-size: 11.5px;
+  text-align: right; font-variant-numeric: tabular-nums;
+  border: 1px solid var(--line-strong); border-radius: 6px;
+  background: var(--surface); color: var(--ink);
+}
+.rate-input:focus-visible { outline: 2px solid var(--green-900); outline-offset: -1px; border-color: var(--green-900); }
+/* ukryj strzałki number input dla czystszego wyglądu */
+.rate-input::-webkit-outer-spin-button, .rate-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.rate-input { -moz-appearance: textfield; }
 .std-card .std-desc { font-size: 11.5px; color: var(--ink-faint); flex: 1; }
 .std-card .std-pick { margin-top: 4px; align-self: stretch; text-align: center; }
 .std-note { margin-top: 10px; font-size: 11.5px; color: var(--ink-faint); }

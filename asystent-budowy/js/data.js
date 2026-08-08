@@ -566,20 +566,32 @@ const BUILD_STANDARDS = [
   },
 ];
 
-/* Liczy koszt dla każdego standardu na podstawie powierzchni (m²) */
-function computeCostByStandard(powUzytkowa, powGarazu) {
+/* Domyślne stawki zł/m² dla każdego standardu (do edycji przez użytkownika). */
+function defaultBuildRates() {
+  const rates = {};
+  BUILD_STANDARDS.forEach(s => { rates[s.key] = { rateDom: s.rateDom, rateGaraz: s.rateGaraz }; });
+  return rates;
+}
+
+/* Liczy koszt dla każdego standardu na podstawie powierzchni (m²).
+   `rateOverrides` (opcjonalnie) pozwala podmienić stawki zł/m² per standard —
+   { niski: { rateDom, rateGaraz }, ... } — np. gdy użytkownik je edytuje. */
+function computeCostByStandard(powUzytkowa, powGarazu, rateOverrides) {
   const pu = Number(powUzytkowa) || 0;
   const pg = Number(powGarazu) || 0;
   return BUILD_STANDARDS.map(s => {
-    const kosztDom = s.rateDom * pu;
-    const kosztGaraz = s.rateGaraz * pg;
+    const ov = (rateOverrides && rateOverrides[s.key]) || {};
+    const rateDom = Number(ov.rateDom) > 0 ? Number(ov.rateDom) : s.rateDom;
+    const rateGaraz = Number(ov.rateGaraz) > 0 ? Number(ov.rateGaraz) : s.rateGaraz;
+    const kosztDom = rateDom * pu;
+    const kosztGaraz = rateGaraz * pg;
     return {
       key: s.key,
       label: s.label,
       opis: s.opis,
       featured: !!s.featured,
-      rateDom: s.rateDom,
-      rateGaraz: s.rateGaraz,
+      rateDom,
+      rateGaraz,
       kosztDom,
       kosztGaraz,
       total: kosztDom + kosztGaraz,

@@ -17,6 +17,9 @@ function isExcluded(key) {
   return (STAGE_EXCLUDE[state && state.stage] || []).includes(key);
 }
 
+/* Etapy, które na końcu (w briefie) dostają przycisk powrotu do ekranu startowego. */
+const STAGES_WITH_BACK = ['brak_dzialki', 'dzialka_bez_projektu'];
+
 function freshState() {
   const checklist = {};
   CHECKLIST_ITEMS.forEach(i => (checklist[i.key] = false));
@@ -1469,6 +1472,7 @@ function renderBrief(step) {
     <div class="brief-foot">
       <button class="btn btn-primary" id="brief-download">⬇ Pobierz brief (.txt)</button>
       <button class="btn btn-ghost" id="brief-restart">↻ Zacznij od nowa</button>
+      ${STAGES_WITH_BACK.includes(state.stage) ? '<button class="btn btn-ghost" id="brief-back">🏠 Powrót do ekranu startowego</button>' : ''}
     </div>`;
   chatWindow().appendChild(brief);
 
@@ -1477,6 +1481,8 @@ function renderBrief(step) {
 
   $('#brief-download', brief).addEventListener('click', () => downloadBrief(sekcje));
   $('#brief-restart', brief).addEventListener('click', openRestartModal);
+  const backBtn = $('#brief-back', brief);
+  if (backBtn) backBtn.addEventListener('click', goToStart);
   scrollChat();
 }
 
@@ -1663,12 +1669,16 @@ function closeModal(id) { $('#' + id).classList.add('hidden'); }
 
 function openRestartModal() { openModal('modal-restart'); }
 
-function doRestart() {
-  closeModal('modal-restart');
+function goToStart() {
   disableChatInput();
   $('#screen-dashboard').classList.add('hidden');
   $('#screen-start').classList.remove('hidden');
   state = freshState();
+}
+
+function doRestart() {
+  closeModal('modal-restart');
+  goToStart();
 }
 
 /* =============================================================

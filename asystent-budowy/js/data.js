@@ -269,10 +269,17 @@ const STAGES = {
       },
       {
         type: 'text',
-        text: 'Masz kosztorys — teraz porównajmy **oferty wykonawców**. Wklej oferty, które zebrałeś (tekst lub skan), a ja ułożę je w porównywalną tabelę i podpowiem rozsądną kolejność prac. Nie masz ofert pod ręką? Użyj przykładowych.',
+        text: 'Masz kosztorys — teraz porównajmy **oferty wykonawców**. Wgraj oferty w PDF (od 2 do 5), a ułożę je w szczegółowe zestawienie: zakres z podziałem na materiały i robociznę, różnice między ofertami i wybór najlepszej.',
       },
       {
-        type: 'oferty',
+        type: 'oferty_upload',
+        intro: 'Wgraj **oferty wykonawców w PDF (od 2 do 5)**. Porównam je pod kątem zakresu (materiały i robocizna), pokażę, czym się różnią, i pomogę wybrać najlepszą. Nie masz plików? Użyj przykładowych ofert.',
+        formats: ['PDF'],
+        demoFiles: [
+          { name: 'oferta_BudDom.pdf',    size: '820 KB' },
+          { name: 'oferta_Kowalski.pdf',  size: '540 KB' },
+          { name: 'oferta_SolidBud.pdf',  size: '910 KB' },
+        ],
         effects: { checklist: ['oferty'], progress: 'oferty' },
       },
       {

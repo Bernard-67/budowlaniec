@@ -25,6 +25,7 @@ function freshState() {
     dzialka: null,         // szacunek działki: { area, pricePerM2, cost }
     mpzp: null,            // odczyt MPZP: { source, parsed }
     projekt: null,         // odczyt projektu: { source, parsed, sourceLabel }
+    oferty: null,          // porównanie ofert: { source, list, wybrana }
   };
 }
 
@@ -94,6 +95,7 @@ function runStep() {
     case 'projekt_upload': return renderProjektUpload(step);
     case 'mpzp':           return renderMpzpWidget(step);
     case 'kosztorys':      return renderKosztorysWidget(step);
+    case 'oferty_upload':  return renderOfertyUpload(step);
     case 'oferty':         return renderOffersWidget(step);
     case 'brief':          return renderBrief(step);
   }
@@ -1196,6 +1198,108 @@ function exportKosztorysCsv(items) {
   a.download = 'kosztorys.csv';
   a.click();
   URL.revokeObjectURL(url);
+}
+
+/* ---------------- Krok: Oferty — upload 2–5 PDF (ETAP 1) ---------------- */
+function renderOfertyUpload(step) {
+  const MAX = 5;
+  assistantSay(md(step.intro), () => {
+    const block = addActionBlock();
+    block.innerHTML = `
+      <div class="widget-label">📊 Wgraj oferty wykonawców (PDF, od 2 do 5)</div>
+      <div style="font-size:13px;color:var(--ink-soft);margin-bottom:6px">Akceptowany format:</div>
+      <div class="format-list">${step.formats.map(f => `<span class="format-chip">${f}</span>`).join('')}</div>
+      <input type="file" id="of-file" class="hidden-file" accept="${formatsToAccept(step.formats)}" multiple>
+      <div class="widget-actions">
+        <button class="btn btn-primary" id="of-pick">📎 Załącz oferty z dysku</button>
+        <button class="btn btn-secondary" id="of-demo">Użyj przykładowych ofert</button>
+      </div>
+      <div class="mpzp-source-note" id="of-source-note" style="display:none"></div>
+      <div class="param-error" id="of-file-error" style="display:none"></div>
+      <ul class="file-list" id="of-file-list"></ul>
+      <div class="widget-actions" id="of-compare-row" style="display:none">
+        <button class="btn btn-primary" id="of-compare">Porównaj oferty →</button>
+      </div>`;
+    scrollChat();
+
+    let source = null;
+    const attached = [];               // {name, size, file?, sample?}
+    const listEl = $('#of-file-list');
+    const acceptedExt = formatsToExt(step.formats);
+
+    const updateControls = () => {
+      $('#of-compare-row').style.display = attached.length ? 'flex' : 'none';
+      const full = attached.length >= MAX;
+      $('#of-pick').disabled = (source === 'demo') || full;
+      $('#of-file').disabled = (source === 'demo') || full;
+      $('#of-demo').disabled = (source === 'real');
+    };
+
+    const addChip = (name, size, extra) => {
+      const rec = Object.assign({ name, size }, extra || {});
+      attached.push(rec);
+      const li = document.createElement('li');
+      li.className = 'file-chip';
+      li.innerHTML = `<span class="fc-ico">${fileIcon(name)}</span>
+        <span class="fc-name">${name}</span>
+        <span class="fc-size">${size}</span>
+        <span class="fc-ok">✓</span>
+        <button class="fc-remove" title="Usuń plik" aria-label="Usuń plik">✕</button>`;
+      li.querySelector('.fc-remove').addEventListener('click', () => {
+        const i = attached.indexOf(rec);
+        if (i >= 0) attached.splice(i, 1);
+        li.remove();
+        if (!attached.length) { source = null; $('#of-source-note').style.display = 'none'; }
+        updateControls();
+        scrollChat();
+      });
+      listEl.appendChild(li);
+      updateControls();
+      scrollChat();
+      return rec;
+    };
+
+    const lockSource = (src, noteHtml) => {
+      source = src;
+      const note = $('#of-source-note');
+      note.innerHTML = noteHtml;
+      note.style.display = 'block';
+      updateControls();
+    };
+
+    $('#of-pick').addEventListener('click', () => $('#of-file').click());
+    $('#of-file').addEventListener('change', e => {
+      const err = $('#of-file-error'); err.style.display = 'none';
+      const rejected = [];
+      [...e.target.files].forEach(file => {
+        if (attached.length >= MAX) { rejected.push(file.name + ' (limit 5)'); return; }
+        const ext = (file.name.split('.').pop() || '').toLowerCase();
+        if (acceptedExt.length && !acceptedExt.includes(ext)) { rejected.push(file.name); return; }
+        addChip(file.name, formatFileSize(file.size), { file });
+      });
+      if (rejected.length) { err.textContent = `Pominięto: ${rejected.join(', ')}.`; err.style.display = 'block'; }
+      if (attached.length) lockSource('real', '📎 Źródło: <strong>Twoje pliki</strong> — odczyt realny. Przykładowe oferty zablokowane.');
+      e.target.value = '';
+    });
+
+    $('#of-demo').addEventListener('click', () => {
+      lockSource('demo', '📄 Źródło: <strong>przykładowe oferty</strong>. Załączanie własnych plików zablokowane.');
+      step.demoFiles.forEach((f, i) => setTimeout(() => addChip(f.name, f.size, { sample: true }), i * 180));
+    });
+
+    $('#of-compare').addEventListener('click', () => {
+      if (attached.length < 2) {
+        const err = $('#of-file-error');
+        err.textContent = 'Dodaj co najmniej 2 oferty do porównania.';
+        err.style.display = 'block';
+        return;
+      }
+      state.oferty = { source, list: attached.map(f => ({ name: f.name, sample: !!f.sample })), wybrana: null };
+      block.remove();
+      addBubble('user', `Wgrałem ${attached.length} oferty: ${attached.map(f => f.name).join(', ')}.`);
+      assistantSay(`Zebrałem ${attached.length} ofert. W kolejnym kroku uzupełnimy dane i przygotuję szczegółowe porównanie (zakres, materiały, robocizna).`, () => advance(step));
+    });
+  });
 }
 
 /* ---------------- Krok: Oferty ---------------- */

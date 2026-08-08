@@ -449,6 +449,7 @@ html, body {
 .oferty-matrix .om-yes { color: var(--ok); font-weight: 700; }
 .oferty-matrix .om-no { color: var(--bad); font-weight: 600; font-size: 11px; }
 .oferty-matrix .om-total td { font-weight: 700; color: var(--green-900); border-bottom: none; }
+.oferty-select-label { font-size: 13px; font-weight: 600; color: var(--green-900); margin: 14px 0 6px; }
 .chat-table tfoot td { font-weight: 700; color: var(--green-900); border-bottom: none; padding-top: 12px; }
 
 /* Parametry domu (metraż + garaż) */

@@ -475,46 +475,65 @@ function computeKosztorys() {
 /* -------------------------------------------------------------
    Porównanie ofert wykonawców — katalog zakresu, dane przykładowe, parser.
    ------------------------------------------------------------- */
-const OFERTA_ZAKRES = [
-  { id: 'zerowy',      label: 'Stan zerowy (fundamenty)' },
-  { id: 'sciany',      label: 'Ściany i stropy' },
-  { id: 'dach',        label: 'Konstrukcja i pokrycie dachu' },
-  { id: 'okna',        label: 'Okna i drzwi zewnętrzne' },
-  { id: 'instalacje',  label: 'Instalacje (elektr., wod-kan, ogrzewanie)' },
-  { id: 'wykonczenie', label: 'Tynki, wylewki, wykończenie' },
-  { id: 'elewacja',    label: 'Elewacja i zagospodarowanie' },
-];
+/* Model oferty: { wykonawca, pozycje: [{ nazwa, kwota }] }. Porównanie zestawia pozycje. */
 
-/* Przykładowe oferty (pełne dane) — różny zakres, żeby pokazać braki w porównaniu */
+/* Przykładowe oferty (pełne dane) — różne pozycje, żeby pokazać „brak” w porównaniu */
 const SAMPLE_OFERTY_SET = [
-  { wykonawca: 'BudDom Sp. z o.o.', cenaMaterialy: 230000, cenaRobocizna: 155000, termin: '7 mies.', zakres: ['zerowy', 'sciany', 'dach', 'okna'] },
-  { wykonawca: 'Ekipa Kowalski',    cenaMaterialy: 120000, cenaRobocizna: 130000, termin: '5 mies.', zakres: ['zerowy', 'sciany', 'dach'] },
-  { wykonawca: 'SolidBud',          cenaMaterialy: 300000, cenaRobocizna: 220000, termin: '9 mies.', zakres: ['zerowy', 'sciany', 'dach', 'okna', 'instalacje'] },
+  { wykonawca: 'BudDom Sp. z o.o.', pozycje: [
+    { nazwa: 'Stan surowy zamknięty', kwota: 280000 },
+    { nazwa: 'Instalacje', kwota: 70000 },
+    { nazwa: 'Wykończenie', kwota: 120000 },
+  ] },
+  { wykonawca: 'Ekipa Kowalski', pozycje: [
+    { nazwa: 'Stan surowy zamknięty', kwota: 250000 },
+    { nazwa: 'Instalacje', kwota: 65000 },
+  ] },
+  { wykonawca: 'SolidBud', pozycje: [
+    { nazwa: 'Stan surowy zamknięty', kwota: 300000 },
+    { nazwa: 'Instalacje', kwota: 80000 },
+    { nazwa: 'Wykończenie', kwota: 150000 },
+    { nazwa: 'Elewacja', kwota: 60000 },
+  ] },
 ];
 
-/* Best-effort odczyt oferty z tekstu PDF: wykonawca + ceny (zakres uzupełnia użytkownik) */
+/* Parsuje kwotę (spacje = tysiące, „.”/„,” + 2 cyfry = grosze) -> liczba całkowita zł */
+function parseKwota(s) {
+  if (!s) return null;
+  const x = String(s).replace(/[\s ]/g, '').replace(/[.,]\d{1,2}$/, '').replace(/[.,]/g, '');
+  const n = parseInt(x, 10);
+  return isFinite(n) ? n : null;
+}
+
+/* Best-effort odczyt oferty z tekstu PDF: wykonawca + kwota całkowita (pozycje uzupełnia użytkownik) */
 function parseOfertaText(raw, filename) {
-  const t = String(raw || '').replace(/[Ŝŝ]/g, 'ż').replace(/\s+/g, ' ');
-  const num = s => (s ? (parseInt(String(s).replace(/[^\d]/g, ''), 10) || null) : null);
+  const t = String(raw || '').replace(/[Ŝŝ]/g, 'ż').replace(/[\r\n]+/g, ' ').replace(/ +/g, ' ');
   const grab = re => { const m = t.match(re); return m ? m[1] : null; };
-  const wyk = grab(/([A-ZŻŹŚŁÓ][\w .-]+(?:Sp\.\s*z\s*o\.\s*o\.|S\.A\.|sp\.\s*j\.))/)
-           || grab(/(?:wykonawca|oferent|firma)\s*[:\-]?\s*([A-ZŻŹŚŁÓ][^;.]{2,40})/i);
+  let wyk = grab(/([A-Za-zÀ-ž][\w .,&-]{1,60}?)\s+\d{2}-\d{3}\b/);            // nazwa przed kodem pocztowym
+  if (!wyk) wyk = grab(/(?:wykonawca|oferent|firma)\s*[:\-]?\s*([A-ZŻŹŚŁÓ][^;.]{2,40})/i);
+  if (wyk) wyk = wyk.replace(/\s+/g, ' ').trim();
+  const razem = parseKwota(grab(/warto\S*\s+oferty\s+netto[^0-9]{0,40}?([\d][\d ., ]*?)\s*zł/i))
+             || parseKwota(grab(/warto\S*\s+oferty\s+brutto[^0-9]{0,40}?([\d][\d ., ]*?)\s*zł/i))
+             || parseKwota(grab(/(?:cena|warto\S*|razem|suma)[^0-9]{0,20}?([\d][\d ., ]*?)\s*(?:zł|PLN)/i));
   return {
-    wykonawca: (wyk ? wyk.trim() : (filename ? filename.replace(/\.pdf$/i, '').replace(/[_-]+/g, ' ') : 'Oferta')),
-    cenaMaterialy: num(grab(/materia[łl]\w*[^.\d]{0,25}?(\d[\d\s.,]*)\s*(?:zł|PLN)/i)),
-    cenaRobocizna: num(grab(/robocizn\w*[^.\d]{0,25}?(\d[\d\s.,]*)\s*(?:zł|PLN)/i)),
-    cenaRazem: num(grab(/(?:cena|warto\S*|razem|suma)[^.\d]{0,25}?(\d[\d\s.,]*)\s*(?:zł|PLN)/i)),
-    zakres: [],
+    wykonawca: wyk || (filename ? filename.replace(/\.pdf$/i, '').replace(/[_]+/g, ' ') : 'Oferta'),
+    cenaRazem: razem,
+    pozycje: [],
   };
 }
 
-/* Porównanie ofert: unia pozycji zakresu (w kolejności katalogu) + czy zakres identyczny */
+/* Klucz pozycji do dopasowania między ofertami (bez wielkości liter/spacji) */
+function ofertaPozKey(nazwa) { return String(nazwa || '').trim().toLowerCase(); }
+
+/* Porównanie: unia pozycji (kolejność pierwszego wystąpienia) + czy zestaw pozycji identyczny */
 function compareOferty(offers) {
-  const present = new Set();
-  offers.forEach(o => (o.zakres || []).forEach(id => present.add(id)));
-  const points = OFERTA_ZAKRES.filter(z => present.has(z.id));
-  const key = o => (o.zakres || []).slice().sort().join(',');
-  const identyczny = offers.length > 0 && offers.every(o => key(o) === key(offers[0]));
+  const points = [];
+  const seen = new Set();
+  offers.forEach(o => (o.pozycje || []).forEach(p => {
+    const k = ofertaPozKey(p.nazwa);
+    if (k && !seen.has(k)) { seen.add(k); points.push({ key: k, label: p.nazwa }); }
+  }));
+  const setKey = o => (o.pozycje || []).map(p => ofertaPozKey(p.nazwa)).filter(Boolean).sort().join('|');
+  const identyczny = offers.length > 0 && offers.every(o => setKey(o) === setKey(offers[0]));
   return { points, identyczny };
 }
 
@@ -628,36 +647,6 @@ function assessBudget(cost, budgetValue, obejmujeOverride) {
   return out;
 }
 
-/* Przykładowe oferty wstrzykiwane do textarea */
-const SAMPLE_OFERTY = `Oferta A — "BudDom Sp. z o.o."
-Zakres: stan surowy zamknięty. Cena: 385 000 zł. Termin: 7 miesięcy. Gwarancja 5 lat. Materiały po stronie wykonawcy.
-
-Oferta B — "Ekipa Kowalski"
-Zakres: stan surowy otwarty. Cena: 250 000 zł. Termin: 5 miesięcy. Bez okien i drzwi. Materiały po stronie inwestora.
-
-Oferta C — "SolidBud"
-Zakres: stan surowy zamknięty + instalacje. Cena: 520 000 zł. Termin: 9 miesięcy. Gwarancja 3 lata.`;
-
-/* Porównanie ofert -> tabela + rekomendowana kolejność prac */
-function buildOffersComparison() {
-  return {
-    rows: [
-      { wykonawca: 'BudDom Sp. z o.o.', zakres: 'Stan surowy zamknięty',            cena: 385000, termin: '7 mies.', kompletnosc: 'Pełna',    material: 'Wykonawca' },
-      { wykonawca: 'Ekipa Kowalski',    zakres: 'Stan surowy otwarty',              cena: 250000, termin: '5 mies.', kompletnosc: 'Częściowa', material: 'Inwestor' },
-      { wykonawca: 'SolidBud',          zakres: 'Surowy zamknięty + instalacje',    cena: 520000, termin: '9 mies.', kompletnosc: 'Rozszerzona', material: 'Wykonawca' },
-    ],
-    uwaga: 'Oferty mają różny zakres — bezpośrednie porównanie ceny jest mylące. Najbliższa Twojemu zapotrzebowaniu jest oferta BudDom (pełny zakres surowy zamknięty).',
-    kolejnosc: [
-      'Prace ziemne i fundamenty (stan zerowy)',
-      'Ściany, stropy i konstrukcja dachu (stan surowy otwarty)',
-      'Pokrycie dachu, okna i drzwi zewnętrzne (stan surowy zamknięty)',
-      'Instalacje: elektryczna, wod-kan, ogrzewanie',
-      'Tynki, wylewki i wykończenie wnętrz',
-      'Zagospodarowanie terenu i elewacja',
-    ],
-  };
-}
-
 /* -------------------------------------------------------------
    Brief końcowy — funkcja buduje sekcje na podstawie stanu.
    Zakres sekcji zależy od etapu (adaptacyjność aplikacji).
@@ -762,11 +751,21 @@ function generateBrief(state) {
   }
 
   if (state.checklist.oferty) {
-    sekcje.push({
-      id: 'oferty',
-      title: '6. Oferty i kolejność prac',
-      text: 'Zebrano 3 oferty o różnym zakresie — bezpośrednie porównanie ceny jest mylące. Najbliższa zapotrzebowaniu: BudDom (pełny stan surowy zamknięty). Rekomendowana kolejność prac: stan zerowy → surowy otwarty → surowy zamknięty → instalacje → wykończenie → zagospodarowanie terenu.',
-    });
+    let ofertyText;
+    if (state.oferty && state.oferty.list && state.oferty.list.length) {
+      const list = state.oferty.list;
+      const identyczny = compareOferty(list).identyczny;
+      ofertyText = `Porównano ${list.length} ofert wykonawców (${identyczny ? 'te same pozycje — porównanie bezpośrednie' : 'różne pozycje — „brak” pokazuje, czego dana oferta nie zawiera'}).`;
+      const chosen = state.oferty.wybrana != null ? list[state.oferty.wybrana] : null;
+      if (chosen) {
+        ofertyText += ` Wybrana oferta: ${chosen.wykonawca} — ${chosen.pozycje.length} pozycji, razem ${formatPln(chosen.cenaRazem)}.`;
+      } else {
+        ofertyText += ' Oferta nie została jeszcze wybrana.';
+      }
+    } else {
+      ofertyText = 'Zebrano oferty wykonawców o różnym zakresie — bezpośrednie porównanie ceny bywa mylące.';
+    }
+    sekcje.push({ id: 'oferty', title: '6. Oferty i kolejność prac', text: ofertyText });
   }
 
   // Zawsze na końcu: następne kroki (adaptacyjnie)

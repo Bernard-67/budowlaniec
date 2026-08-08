@@ -7,6 +7,16 @@
 /* ---------------- Stan globalny ---------------- */
 let state = null;
 
+/* Pozycje niedostępne w danym etapie (węższy zakres).
+   Dotyczy karty bocznej, pozycji checklisty i węzła paska postępu. */
+const STAGE_EXCLUDE = {
+  brak_dzialki:         ['oferty'],  // „Mam tylko pomysł” — bez ofert
+  dzialka_bez_projektu: ['oferty'],  // „Mam działkę” — bez ofert
+};
+function isExcluded(key) {
+  return (STAGE_EXCLUDE[state && state.stage] || []).includes(key);
+}
+
 function freshState() {
   const checklist = {};
   CHECKLIST_ITEMS.forEach(i => (checklist[i.key] = false));
@@ -1532,7 +1542,7 @@ function downloadBrief(sekcje) {
    ============================================================= */
 function renderChecklist() {
   const ul = $('#checklist');
-  ul.innerHTML = CHECKLIST_ITEMS.map(item => {
+  ul.innerHTML = CHECKLIST_ITEMS.filter(item => !isExcluded(item.key)).map(item => {
     const done = state.checklist[item.key];
     return `<li class="${done ? 'done' : ''}">
       <span class="cl-box">${done ? '✓' : ''}</span>${item.label}</li>`;
@@ -1553,11 +1563,12 @@ function setProgress(key) {
 
 function renderProgress() {
   const nav = $('#progress-bar');
-  nav.innerHTML = PROGRESS_STEPS.map((s, i) => {
+  const steps = PROGRESS_STEPS.filter(s => !isExcluded(s.key));
+  nav.innerHTML = steps.map((s, i) => {
     const isActive = state.progress === s.key;
     const isDone = state.progressDone.includes(s.key);
     const cls = isActive ? 'active' : (isDone ? 'done' : '');
-    const line = i < PROGRESS_STEPS.length - 1 ? `<span class="pn-line"></span>` : '';
+    const line = i < steps.length - 1 ? `<span class="pn-line"></span>` : '';
     const mark = isDone ? '✓' : (i + 1);
     return `<div class="progress-node ${cls}">
       <span class="pn-dot">${mark}</span>
@@ -1572,6 +1583,8 @@ function resetSideCards() {
     const card = $('#' + id);
     card.classList.add('card-locked');
     setCardOpen(card, false);
+    // karty spoza zakresu etapu w ogóle się nie pojawiają
+    card.hidden = isExcluded(card.dataset.card);
   });
   $('#card-mpzp-body').innerHTML = '<p class="card-placeholder">Odblokuje się po analizie planu miejscowego.</p>';
   $('#card-kosztorys-body').innerHTML = '<p class="card-placeholder">Odblokuje się po wygenerowaniu kosztorysu.</p>';

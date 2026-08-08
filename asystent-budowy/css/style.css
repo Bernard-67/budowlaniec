@@ -596,6 +596,7 @@ html, body {
 .card-title { flex: 1 1 auto; }
 .card-body { padding: 14px 16px; }
 .card-placeholder { color: var(--ink-faint); font-size: 13px; font-style: italic; margin: 0; }
+.card[hidden] { display: none !important; }
 .card-locked { opacity: .58; }
 .card-locked .card-head { color: var(--ink-faint); }
 .card.unlocking { animation: rise .35s ease; }
